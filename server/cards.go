@@ -11,6 +11,8 @@ type Player struct {
 	currentCards []string
 	bet          int
 	score        int
+	betFlag      bool
+	betInp       chan int
 }
 
 type Table struct {
@@ -47,6 +49,20 @@ func NewTable() *Table {
 	fmt.Println("Table created")
 	return &newT
 }
+
+// func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+// 	switch r.URL.Path {
+// 	case "/user/profile":
+// 		srv.profileHandler(w, r)
+// 	case "/user/create":
+// 		srv.profileHandler(w, r)
+// 	default:
+// 		w.WriteHeader(http.StatusNotFound)
+// 		out := map[string]interface{}{"error": errors.New("unknown method").Error()}
+// 		data, _ := json.Marshal(out)
+// 		w.Write(data)
+// 	}
+// }
 
 func (t *Table) Join(pID string) {
 	fmt.Println("Join", pID)
@@ -89,16 +105,22 @@ func (t *Table) Round(round int) {
 		}
 	}
 
+	t.trump = t.players[0].currentCards[0]
+
 	t.currentTurn = t.firstTurn
 	t.firstTurn++
 	if t.firstTurn == t.playersCount {
 		t.firstTurn = 0
 	}
-	t.trump = t.players[0].currentCards[0]
+
 	time.Sleep(1 * time.Second)
+	// t.onTable = make([]string, t.playersCount)
+	// fmt.Println("round", t.onTable, len(t.onTable))
 	for len(t.players[0].currentCards) > 0 {
+		t.onTable = make([]string, t.playersCount)
 		for i := 0; i < t.playersCount; i++ {
-			t.onTable = append(t.onTable, t.DropCard())
+			//t.onTable = append(t.onTable, t.DropCard())
+			t.onTable[t.currentTurn] = t.DropCard()
 		}
 		whosTurn := t.players[t.currentTurn].id
 		whoWin := t.WhoGetTheTable()
@@ -112,6 +134,11 @@ func (t *Table) Round(round int) {
 	for id := range t.players {
 		t.players[id].score += roundScore[t.players[id].id]
 	}
+}
+
+func (t *Table) GetBet(player int, bet chan int) {
+	t.players[player].betFlag = true
+	t.players[player].bet = <-bet
 }
 
 func (t *Table) DropCard() (toTable string) {

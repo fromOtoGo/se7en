@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -24,7 +25,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-func sendNewMsgNotifications(client *websocket.Conn) {
+func sendNewMsgNotifications(client *websocket.Conn, num int) {
 	ticker := time.NewTicker(1 * time.Second)
 	for {
 		w, err := client.NextWriter(websocket.TextMessage)
@@ -33,7 +34,7 @@ func sendNewMsgNotifications(client *websocket.Conn) {
 			break
 		}
 
-		msg := newMessage()
+		msg := newMessage(num)
 		w.Write(msg)
 		w.Close()
 
@@ -41,24 +42,37 @@ func sendNewMsgNotifications(client *websocket.Conn) {
 	}
 }
 
-func newMessage() []byte {
+func newMessage(num int) []byte {
 	data, _ := json.Marshal(map[string]interface{}{
 		"trump":  GameTable.trump,
-		"cards":  GameTable.players[0].currentCards,
+		"cards":  GameTable.players[num].currentCards,
 		"player": GameTable.onTable,
 	})
-	fmt.Println(string(data))
 	return data
 }
 
 var tpl = template.Must(template.ParseFiles("html/authorization.html"))
 
-func YourHandler(w http.ResponseWriter, r *http.Request) {
+func yourHandler(w http.ResponseWriter, r *http.Request) {
 	tpl.Execute(w, nil)
 
 }
 
-func RegisterHandler(w http.ResponseWriter, r *http.Request) {
+func checkCookieMidleWare(next http.Handler) http.Handler {
+	fmt.Println("check cookie")
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookie, err := r.Cookie("session_id")
+		fmt.Println(cookie)
+		if err != nil {
+			fmt.Println("no auth at", r.URL.Path)
+			http.Redirect(w, r, "/", http.StatusFound)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func registerHandler(w http.ResponseWriter, r *http.Request) {
 	tpl := template.Must(template.ParseFiles("html/register.html"))
 	if r.Method == http.MethodGet {
 		tpl.Execute(w, nil)
@@ -69,9 +83,18 @@ func RegisterHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			panic(err)
 		}
-		if strings.TrimPrefix(string(body), "Name=") != "" {
+		name := strings.TrimPrefix(string(body), "Name=")
+		if name != "" {
 			fmt.Println(string(body))
-			GameTable.Join(strings.TrimPrefix(string(body), "Name="))
+			GameTable.Join(name)
+
+			expiration := time.Now().Add(10 * time.Hour)
+			cookie := http.Cookie{
+				Name:    "session_id",
+				Value:   name,
+				Expires: expiration,
+			}
+			http.SetCookie(w, &cookie)
 			http.Redirect(w, r, "/game", 303)
 		}
 
@@ -84,8 +107,13 @@ type ViewData struct {
 
 //var data ViewData
 
-func GameHandler(w http.ResponseWriter, r *http.Request) {
-	data := ViewData{Name: GameTable.players[GameTable.playersCount-1].id}
+func gameHandler(w http.ResponseWriter, r *http.Request) {
+	id, _ := r.Cookie("session_id")
+	playerID, err := strconv.Atoi(id.Value)
+	if err != nil {
+		panic(err)
+	}
+	data := ViewData{Name: GameTable.players[playerID].id}
 	tpl := template.Must(template.ParseFiles("html/game.html"))
 	// if r.Method == http.MethodGet {
 	tpl.Execute(w, data)
@@ -93,12 +121,6 @@ func GameHandler(w http.ResponseWriter, r *http.Request) {
 }
 func main() {
 
-	//GameTable.Join("Sten")
-	// GameTable.Join("Mila")
-	// GameTable.Join("Irma")
-	// GameTable.Join("Helga")
-	// GameTable.Join("John")
-	// GameTable.Start()
 	go func() {
 		for {
 			if GameTable.playersCount == 2 {
@@ -109,14 +131,18 @@ func main() {
 		}
 	}()
 
+	rc := mux.NewRouter()
 	r := mux.NewRouter()
 	// Routes consist of a path and a handler function.
 	//r.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./static"))))
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
-	r.HandleFunc("/game", GameHandler)
-	r.HandleFunc("/", YourHandler)
-	r.HandleFunc("/register", RegisterHandler)
+	rc.HandleFunc("/game", gameHandler)
+	withCheckHandler := checkCookieMidleWare(rc)
+
+	r.HandleFunc("/", yourHandler)
+	r.HandleFunc("/register", registerHandler)
 	r.HandleFunc("/wsgame", wsGameHandler)
+	r.Handle("/game", withCheckHandler)
 
 	// Bind to a port and pass our router in
 	log.Fatal(http.ListenAndServe(":8000", r))
@@ -128,14 +154,19 @@ func wsGameHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	go readMessage(ws)
-	go sendNewMsgNotifications(ws)
+	id, _ := r.Cookie("session_id")
+	playerID, err := strconv.Atoi(id.Value)
+	if err != nil {
+		panic(err)
+	}
+	go readMessage(ws, GameTable.playersCount)
+	go sendNewMsgNotifications(ws, playerID)
 
 }
 
-func readMessage(conn *websocket.Conn) {
-	fmt.Println("INPUT MESSAGE")
+func readMessage(conn *websocket.Conn, num int) {
 	for {
+
 		messageType, p, err := conn.ReadMessage()
 		if err != nil {
 			log.Println(err)
@@ -146,14 +177,14 @@ func readMessage(conn *websocket.Conn) {
 			return
 		}
 		if p != nil {
-			var data interface{}
+			var data map[string]interface{}
 			err := json.Unmarshal(p, &data)
-			fmt.Println(string(p))
 			if err != nil {
 				panic(err)
 			}
 			fmt.Println(data)
-
 		}
+
 	}
+
 }
