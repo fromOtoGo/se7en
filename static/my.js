@@ -14,7 +14,7 @@ document.forms.publish.onsubmit = function() {
 
 function imgsrc(num){
   let message = {
-    "cardNumber": num
+    "card_number": num
   }
   
   socket.send(JSON.stringify(message));
