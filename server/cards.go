@@ -2,18 +2,29 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"math/rand"
+	"net/http"
 	"sort"
 	"strconv"
 	"sync"
+	"text/template"
 	"time"
 )
 
+//NextPlayersID corresponds next new players ID
+var NextPlayersID int = 1111
+
+//PlayersDB all created players
+var PlayersDB map[int]*player = make(map[int]*player)
+
 type player struct {
-	id           string
+	id           int
+	name         string
 	currentCards []string
 	bet          int
 	score        int
+	newMsg       chan struct{}
 	betFlag      bool
 	turnFlag     bool
 	jokerFlag    bool
@@ -31,6 +42,22 @@ type Table struct {
 	trump            string
 	inputCh          chan int
 	mu               sync.RWMutex
+}
+
+//AllPlayers contains all online players
+var AllPlayers = map[int]*player{}
+var gameTables = make([]*Table, 0, 5)
+var nonStartedTables = map[string]*Table{}
+
+//NewPlayer Creates new player to DB
+func NewPlayer(name string) int {
+	newPl := player{}
+	newPl.name = name
+	newPl.id = NextPlayersID
+	newPl.newMsg = make(chan struct{})
+	PlayersDB[NextPlayersID] = &newPl
+	NextPlayersID++
+	return newPl.id
 }
 
 //NewTable create new game table
@@ -56,11 +83,53 @@ func NewTable() *Table {
 	newT.firstTurn = 1
 	newT.inputCh = make(chan int)
 	fmt.Println("Table created")
+	gameTables = append(gameTables, &newT)
 	return &newT
 }
 
+func mainHandler(w http.ResponseWriter, r *http.Request) {
+	tpl := template.Must(template.ParseFiles("html/main.html"))
+	tpl.Execute(w, nil)
+}
+
+//ServeWS ...
+func ServeWS(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("in hand")
+
+	ws, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	id, _ := r.Cookie("session_id")
+	table, _ := r.Cookie("table")
+	playerID, err := strconv.Atoi(id.Value)
+	if err != nil {
+		panic(err)
+	}
+	playerTable, err := strconv.Atoi(table.Value)
+	if err != nil {
+		panic(err)
+	}
+	go readMessage(ws, playerTable, playerID)
+	go sendNewMsgNotifications(ws, playerID)
+
+}
+
+func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	fmt.Println("IN SERVE")
+	id, _ := r.Cookie("session_id")
+	playerID, err := strconv.Atoi(id.Value)
+	if err != nil {
+		panic(err)
+	}
+	data := viewData{Name: allTables[0].players[playerID].id}
+	tpl := template.Must(template.ParseFiles("html/game.html"))
+	tpl.Execute(w, data)
+}
+
 //Join adds player to table
-func (t *Table) Join(pID string) {
+func (t *Table) Join(pID int) {
 	fmt.Println("Join", pID)
 	t.playersCount++
 	t.players = append(t.players, player{id: pID})
@@ -87,7 +156,7 @@ func (t *Table) round(round int) {
 	fmt.Println()
 	fmt.Print("ROUND ", round, " ")
 	fmt.Println("First turn:", t.players[t.firstTurn].id)
-	roundScore := make(map[string]int)
+	roundScore := make(map[int]int)
 	for key := range roundScore {
 		roundScore[key] = 0
 	}
@@ -145,11 +214,11 @@ func (t *Table) round(round int) {
 				t.currentTurn = 0
 			}
 		}
-		whosTurn := t.players[t.currentTurn].id
+		whosTurn := t.players[t.currentTurn].name
 		whoWin := t.whoGetTheTable()
 		roundScore[whoWin]++
 
-		fmt.Printf("%s turn. Cards on TABLE: %s. Trump:%s. WINNER:%s\n", whosTurn, t.onTable, t.trump, whoWin)
+		fmt.Printf("%s turn. Cards on TABLE: %s. Trump:%s. WINNER:%s\n", whosTurn, t.onTable, t.trump, t.players[whoWin].name)
 		time.Sleep(1 * time.Second)
 		t.onTable = nil
 
@@ -186,7 +255,7 @@ func (t *Table) dropCard(player int) (cardIndex int) {
 	return
 }
 
-func (t *Table) whoGetTheTable() (id string) {
+func (t *Table) whoGetTheTable() (id int) {
 	maxCard := t.onTable[t.currentTurn]
 	maxIndex := t.currentTurn
 	for i := 1; i < len(t.onTable); i++ {

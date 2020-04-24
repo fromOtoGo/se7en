@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -54,7 +55,7 @@ func newMessage(num int) []byte {
 
 var tpl = template.Must(template.ParseFiles("html/authorization.html"))
 
-func yourHandler(w http.ResponseWriter, r *http.Request) {
+func signInHandler(w http.ResponseWriter, r *http.Request) {
 	tpl.Execute(w, nil)
 
 }
@@ -63,20 +64,15 @@ func checkCookieMidleWare(next http.Handler) http.Handler {
 	fmt.Println("check cookie")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cookie, err := r.Cookie("session_id")
-		fmt.Println(cookie)
 		if err != nil {
 			fmt.Println("no auth at", r.URL.Path)
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
-		cookie, err = r.Cookie("table")
-		fmt.Println(cookie)
-		if err != nil {
-			fmt.Println("no auth at", r.URL.Path)
-			http.Redirect(w, r, "/", http.StatusFound)
-			return
-		}
-		next.ServeHTTP(w, r)
+
+		ctx := r.Context()
+		ctx = context.WithValue(ctx, sessID, cookie.Value)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -93,35 +89,29 @@ func registerHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		name := strings.TrimPrefix(string(body), "Name=")
 		if name != "" {
-			fmt.Println(string(body))
-			allTables[0].Join(name)
-
+			for i := range PlayersDB {
+				if PlayersDB[i].name == name {
+					return
+				}
+			}
+			id := NewPlayer(name)
 			expiration := time.Now().Add(10 * time.Hour)
 			cookie := http.Cookie{
 				Name:    "session_id",
-				Value:   name,
+				Value:   strconv.Itoa(id),
 				Expires: expiration,
 			}
 			http.SetCookie(w, &cookie)
-
-			cookie = http.Cookie{
-				Name:    "table",
-				Value:   "0",
-				Expires: expiration,
-			}
-			http.SetCookie(w, &cookie)
-
-			http.Redirect(w, r, "/game", 303)
+			AllPlayers[id] = PlayersDB[id]
+			http.Redirect(w, r, "/main", 303)
 		}
 
 	}
 }
 
 type viewData struct {
-	Name string
+	Name int
 }
-
-//var data ViewData
 
 func gameHandler(w http.ResponseWriter, r *http.Request) {
 	id, _ := r.Cookie("session_id")
@@ -137,54 +127,34 @@ func gameHandler(w http.ResponseWriter, r *http.Request) {
 	// }
 }
 func main() {
+	Servers := AllServers{}
+	MainServers = &Servers
+	MainServers.nonStartedGames = make(map[int]*GameServer)
+	MainServers.startedGames = make(map[int]*GameServer)
+	// allTables = append(allTables, NewTable())
 
-	allTables = append(allTables, NewTable())
-	go func() {
-		for {
-			for i := range allTables {
-				if allTables[i].playersCount == 2 {
-					allTables[i].Start()
-					allTables = append(allTables, NewTable())
-				}
-			}
-		}
-	}()
+	// go func() {
+	// 	for {
+	// 		for i := range allTables {
+	// 			if allTables[i].playersCount == 2 {
+	// 				allTables[i].Start()
+	// 				allTables = append(allTables, NewTable())
+	// 			}
+	// 		}
+	// 	}
+	// }()
 
-	rc := mux.NewRouter()
 	r := mux.NewRouter()
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
-	rc.HandleFunc("/game", gameHandler)
-	withCheckHandler := checkCookieMidleWare(rc)
-
-	r.HandleFunc("/", yourHandler)
+	r.HandleFunc("/", signInHandler)
 	r.HandleFunc("/register", registerHandler)
-	r.HandleFunc("/wsgame", wsGameHandler)
-	r.Handle("/game", withCheckHandler)
-
+	r.Handle("/game", checkCookieMidleWare(NewTable()))
+	// rc.HandleFunc("/main", MainServers)
+	// rc.HandleFunc("/wsgame", wsGameHandler)
+	// withCheckHandler := checkCookieMidleWare(rc)
+	r.Handle("/main", checkCookieMidleWare(http.HandlerFunc(MainServers.ServeHTTP)))
+	r.Handle("/wsmain", checkCookieMidleWare(http.HandlerFunc(MainServers.ServeHTTP)))
 	log.Fatal(http.ListenAndServe(":8000", r))
-}
-
-func wsGameHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Println("in hand")
-
-	ws, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	id, _ := r.Cookie("session_id")
-	table, _ := r.Cookie("table")
-	playerID, err := strconv.Atoi(id.Value)
-	if err != nil {
-		panic(err)
-	}
-	playerTable, err := strconv.Atoi(table.Value)
-	if err != nil {
-		panic(err)
-	}
-	go readMessage(ws, playerTable, playerID)
-	go sendNewMsgNotifications(ws, playerID)
-
 }
 
 func readMessage(conn *websocket.Conn, table int, num int) {
