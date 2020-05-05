@@ -21,7 +21,7 @@ type GameServer struct {
 	ID            int      `json:"id,string"`
 	Password      string   `json:"pass,omitempty"`
 	PlayersIn     []string `json:"players_name"`
-	table         *Table   `json:"-"`
+	table         *Table
 }
 
 //AllServers contains all running games adn tables in this moment

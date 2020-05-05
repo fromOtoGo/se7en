@@ -54,6 +54,7 @@ type Table struct {
 
 //AllPlayers contains all online players
 // var AllPlayers = map[int]*player{}
+
 var gameTables = make([]*Table, 0, 5)
 var nonStartedTables = map[string]*Table{}
 
@@ -139,7 +140,6 @@ func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 //Join adds player to table
 func (t *Table) Join(name string) {
-
 	t.playersCount++
 
 	t.players = append(t.players, newPlayer(name))
@@ -148,11 +148,16 @@ func (t *Table) Join(name string) {
 
 //Start starts the game
 func (t *Table) Start() {
+
+	for i := range t.players {
+		t.players[i].id = i
+	}
+
 	if t.playersCount > 1 {
 		t.maxCardsToPlayer = 36 / t.playersCount
 		//start new server and redirect
 	}
-	t.blindRound()
+
 	for i := 0; i < t.maxCardsToPlayer; i++ {
 		t.round(i + 1)
 	}
@@ -162,6 +167,7 @@ func (t *Table) Start() {
 	for i := t.maxCardsToPlayer; i > 0; i-- {
 		t.round(i)
 	}
+	t.blindRound()
 	for id := range t.players {
 		fmt.Println(t.players[id].id, t.players[id].score)
 	}
@@ -290,16 +296,19 @@ func (t *Table) dropCard(player int) (cardIndex int) {
 func (t *Table) whoGetTheTable() (id int) {
 	maxCard := t.onTable[t.currentTurn]
 	maxIndex := t.currentTurn
+	fmt.Println(t.onTable, t.trump)
 	for i := 1; i < len(t.onTable); i++ {
 		index := t.currentTurn + i
 		if index >= t.playersCount {
 			index = 0
 		}
 		currentCard := t.onTable[index]
+		fmt.Println(currentCard, maxCard)
 		if maxCard[0:3] != currentCard[0:3] {
 			if currentCard[0:3] != t.trump[0:3] {
 				continue
 			}
+			fmt.Println(currentCard)
 			maxCard = currentCard
 			maxIndex = index
 		} else {
@@ -310,11 +319,11 @@ func (t *Table) whoGetTheTable() (id int) {
 		}
 
 	}
-
 	winIDIndex := maxIndex
 	id = t.players[winIDIndex].id
 	t.currentTurn = winIDIndex
-
+	fmt.Println(id)
+	fmt.Println("max ", maxCard)
 	return
 }
 
@@ -360,6 +369,7 @@ func (t *Table) whatJokerMeans(player int) (string, error) {
 			return "", errors.New("Should be first turn")
 		}
 		if len(t.players[player].currentCards) != t.cardsOnRound {
+			fmt.Println(len(t.players[player].currentCards), t.cardsOnRound)
 			return "", errors.New("Should be first card of round")
 		}
 		return "♥9", nil
@@ -400,7 +410,6 @@ func (t *Table) whatJokerMeans(player int) (string, error) {
 	default:
 		return "", errors.New("wrong joker code")
 	}
-	return "", nil
 }
 
 func sendCards(client *websocket.Conn, name string) {
@@ -585,6 +594,10 @@ func (t *Table) blindRound() {
 		t.onTable = nil
 
 	}
+	t.calculateScore(roundScore)
+}
+
+func (t *Table) calculateScore(roundScore map[int]int) {
 	for id := range t.players {
 		difference := roundScore[t.players[id].id] - t.players[id].bet
 		if difference < 0 {
@@ -593,7 +606,7 @@ func (t *Table) blindRound() {
 			if t.players[id].bet == 0 {
 				t.players[id].score += 5
 			} else {
-				t.players[id].score += difference * 10
+				t.players[id].score += t.players[id].bet * 10
 			}
 		} else {
 			t.players[id].score += roundScore[t.players[id].id]
