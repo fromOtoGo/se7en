@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -11,6 +12,9 @@ type CalcScoreTest struct {
 }
 
 func TestCalcScore(t *testing.T) {
+	x := []string{"♥1", "♠2", "♠1", "♣1"}
+	fmt.Println(append(x[0:], x[0:0]...))
+	fmt.Println(append(x[1:], x[0:1]...))
 	Tbl := Table{}
 	plr := player{name: "test"}
 	Tbl.players = append(Tbl.players, &plr)
@@ -277,12 +281,16 @@ type whoGet struct {
 func TestWhoGetTable(t *testing.T) {
 	Tbl := Table{}
 	plr1 := player{name: "test1"}
+	plr1.id = 0
 	Tbl.players = append(Tbl.players, &plr1)
 	plr2 := player{name: "test2"}
+	plr2.id = 1
 	Tbl.players = append(Tbl.players, &plr2)
 	plr3 := player{name: "test3"}
+	plr3.id = 2
 	Tbl.players = append(Tbl.players, &plr3)
 	plr4 := player{name: "test4"}
+	plr4.id = 3
 	Tbl.players = append(Tbl.players, &plr4)
 	Tbl.playersCount = 4
 	Tbl.trump = "♠5"
@@ -293,9 +301,29 @@ func TestWhoGetTable(t *testing.T) {
 			table:  []string{"♥1", "♦1", "♠1", "♣1"},
 			result: 2,
 		},
+		whoGet{
+			turn:   3,
+			table:  []string{"♥1", "♠2", "♠1", "♣1"},
+			result: 1,
+		},
+		whoGet{
+			turn:   3,
+			table:  []string{"♥1", "♥2", "♥3", "♥6"},
+			result: 3,
+		},
+		whoGet{
+			turn:   0,
+			table:  []string{"♥1", "♦2", "♦3", "♣6"},
+			result: 0,
+		},
+		whoGet{
+			turn:   3,
+			table:  []string{"♠4", "♠5", "♦3", "♠3"},
+			result: 1,
+		},
 	}
-
 	for caseNum, item := range cases {
+		fmt.Println("CASE", caseNum)
 		Tbl.onTable = item.table
 		Tbl.currentTurn = item.turn
 		winner := Tbl.whoGetTheTable()
@@ -303,7 +331,6 @@ func TestWhoGetTable(t *testing.T) {
 			t.Errorf("case %v, got: %v, expeceted %v", caseNum, winner, item.result)
 		}
 	}
-
 }
 
 // ♥ ♦ ♣ ♠
