@@ -70,6 +70,7 @@ func newPlayer(name string) *player {
 	AllUsers[name].plr.name = name
 	AllUsers[name].plr.inputCh = make(chan int)
 	AllUsers[name].plr.newMsg = make(chan struct{})
+	AllUsers[name].plr.sendScore = make(chan struct{})
 	AllUsers[name].plr.err = nil
 	return &AllUsers[name].plr
 }
@@ -130,6 +131,7 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	AllUsers[id.Value].plr.newMsg <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
 	AllUsers[id.Value].plr.newMsg <- struct{}{}
+	AllUsers[id.Value].plr.sendScore <- struct{}{}
 }
 
 func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -152,28 +154,38 @@ func (t *Table) Join(name string) {
 	AllUsers[name].plr.tablePTR = t
 }
 
+func (t *Table) addNewRoindInChart(round int) {
+	t.ScoreChart = append(t.ScoreChart, make([]struct {
+		Bet int
+		Got int
+	}, t.playersCount))
+
+	for i := range t.players {
+		t.ScoreChart[round-1][i] = struct {
+			Bet int
+			Got int
+		}{}
+	}
+}
+
 //Start starts the game
 func (t *Table) Start() {
+	fmt.Println("game started")
 	for i := range t.players {
 		t.players[i].id = i
 	}
 
-	rounds := 30 // should be precalculated amount of rounds
-	for round := 0; round < rounds; round++ {
-		t.ScoreChart[round] = make([]struct {
-			Bet int
-			Got int
-		}, rounds)
-		for i := range t.players {
-			t.ScoreChart[round][i] = struct {
-				Bet int
-				Got int
-			}{}
-		}
-	}
-	t.sendScore()
-	t.maxCardsToPlayer = 36 / t.playersCount
+	t.ScoreChart = make([][]struct {
+		Bet int
+		Got int
+	}, 0, 18)
 
+	fmt.Println("before")
+	t.sendScore()
+	fmt.Println("before")
+	t.maxCardsToPlayer = 36 / t.playersCount
+	time.Sleep(1 * time.Second)
+	t.blindRound()
 	for i := 0; i < t.maxCardsToPlayer; i++ {
 		t.round(i + 1)
 	}
@@ -187,32 +199,38 @@ func (t *Table) Start() {
 	for id := range t.players {
 		fmt.Println(t.players[id].id, t.players[id].score)
 	}
+	t.sendScore()
+	time.Sleep(60 * time.Second)
 }
 
 func (t *Table) round(round int) {
 	t.currentRound++
+	t.addNewRoindInChart(t.currentRound)
 	roundScore := make(map[int]int)
 	for key := range roundScore {
 		roundScore[key] = 0
 	}
 	t.trump = ""
+	rand.Seed(time.Now().UnixNano())
 
-	for i := range t.cards {
-		j := rand.Intn(i + 1)
-		t.cards[i], t.cards[j] = t.cards[j], t.cards[i]
-	}
-
-	if round <= t.maxCardsToPlayer {
-		count := 0
-		for i := range t.players {
-			t.players[i].currentCards = t.cards[count*round : count*round+round]
-			sort.SliceStable(t.players[i].currentCards, func(x, y int) bool { return t.players[i].currentCards[x] > t.players[i].currentCards[y] })
-			count++
-			fmt.Println(t.players[i])
+	func(cards [36]string) {
+		for i := range cards {
+			j := rand.Intn(i + 1)
+			cards[i], cards[j] = cards[j], cards[i]
 		}
-	}
 
-	t.trump = t.cards[35]
+		if round <= t.maxCardsToPlayer {
+			count := 0
+			for i := range t.players {
+				t.players[i].currentCards = cards[count*round : count*round+round]
+				sort.SliceStable(t.players[i].currentCards, func(x, y int) bool { return t.players[i].currentCards[x] > t.players[i].currentCards[y] })
+				count++
+				fmt.Println(t.players[i])
+			}
+		}
+		t.trump = cards[35]
+	}(t.cards)
+
 	t.currentTurn = t.firstTurn
 	t.firstTurn++
 
@@ -222,14 +240,15 @@ func (t *Table) round(round int) {
 
 	t.refreshCards()
 
-	for i := range t.players {
-		turn := t.currentTurn + i
-		if turn >= t.playersCount {
-			turn = 0
-		}
-		t.getBet(turn, t.players[turn].inputCh)
+	for range t.players {
+
+		fmt.Println("BET", t.players[t.currentTurn].name)
+		t.getBet(t.currentTurn, t.players[t.currentTurn].inputCh)
 		t.refreshCards()
-		t.sendScore()
+		t.currentTurn++
+		if t.currentTurn >= t.playersCount {
+			t.currentTurn = 0
+		}
 	}
 
 	for len(t.players[0].currentCards) > 0 {
@@ -266,14 +285,13 @@ func (t *Table) round(round int) {
 				t.currentTurn = 0
 			}
 			t.refreshCards()
-			t.sendScore()
 		}
 		whosTurn := t.players[t.currentTurn].name
 		whoWin := t.whoGetTheTable()
 		roundScore[whoWin]++
 
 		fmt.Printf("%s turn. Cards on TABLE: %s. Trump:%s. WINNER:%s\n", whosTurn, t.onTable, t.trump, t.players[whoWin].name)
-		time.Sleep(1 * time.Second)
+		time.Sleep(800 * time.Millisecond)
 		t.onTable = nil
 
 	}
@@ -284,8 +302,9 @@ func (t *Table) getBet(player int, bet <-chan int) {
 	t.mu.Lock()
 	t.players[player].betFlag = true
 	t.mu.Unlock()
+	t.sendScore()
 	t.players[player].bet = <-bet
-	t.ScoreChart[t.currentRound][player].Bet = t.players[player].bet
+	t.ScoreChart[t.currentRound-1][player].Bet = t.players[player].bet
 }
 
 func (t *Table) dropCard(player int) (cardIndex int) {
@@ -322,7 +341,7 @@ func (t *Table) whoGetTheTable() (id int) {
 	winIDIndex := maxIndex
 	id = t.players[winIDIndex].id
 	t.currentTurn = winIDIndex
-	t.ScoreChart[t.currentRound][winIDIndex].Got++
+	t.ScoreChart[t.currentRound-1][winIDIndex].Got++
 	return
 }
 
@@ -405,7 +424,10 @@ func (t *Table) whatJokerMeans(player int) (string, error) {
 	case 8:
 		return "♠", nil
 	case 9:
-		return "♠", nil //prob any lowest, do not allow to start with it
+		if len(t.onTable) != 0 {
+			return "", errors.New("Choose suit")
+		}
+		return "0000", nil
 	default:
 		return "", errors.New("wrong joker code")
 	}
@@ -454,6 +476,9 @@ func sendCards(client *websocket.Conn, name string) {
 				totalScore = append(totalScore, AllUsers[name].plr.tablePTR.players[i].score)
 			}
 			data, err := json.Marshal(map[string]interface{}{
+				"position":   AllUsers[name].plr.id,
+				"turn":       AllUsers[name].plr.tablePTR.currentTurn,
+				"isBet":      AllUsers[name].plr.betFlag,
 				"names":      names,
 				"totalScore": totalScore,
 				"scoreChart": AllUsers[name].plr.tablePTR.ScoreChart,
@@ -462,6 +487,7 @@ func sendCards(client *websocket.Conn, name string) {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
 				client.WriteJSON(errorMsg)
 			}
+			fmt.Println("SENDED", string(data))
 			w.Write(data)
 			w.Close()
 		}
@@ -529,11 +555,13 @@ func readMessage(conn *websocket.Conn, name string) {
 
 func (t *Table) blindRound() {
 	t.currentRound++
+	t.addNewRoindInChart(t.currentRound)
 	roundScore := make(map[int]int)
 	for key := range roundScore {
 		roundScore[key] = 0
 	}
 	t.trump = ""
+
 	t.currentTurn = t.firstTurn
 	t.firstTurn++
 
@@ -543,16 +571,18 @@ func (t *Table) blindRound() {
 
 	t.refreshCards()
 
-	suits := make([]string, 18)
+	suits := make([]string, 0, t.maxCardsToPlayer)
 	for i := 0; i < t.maxCardsToPlayer; i++ {
 		suits = append(suits, "suit")
 	}
+	fmt.Println(len(suits), t.maxCardsToPlayer)
 	for _, i := range t.players {
 		i.currentCards = suits
 	}
 	t.refreshCards()
 
 	for i := range t.players {
+		t.sendScore()
 		turn := t.currentTurn + i
 		if turn >= t.playersCount {
 			turn = 0
@@ -560,24 +590,27 @@ func (t *Table) blindRound() {
 		t.getBet(turn, t.players[turn].inputCh)
 		t.refreshCards()
 	}
+	t.sendScore()
+	rand.Seed(time.Now().UnixNano())
+	func(cards [36]string) {
+		for i := range cards {
+			j := rand.Intn(i + 1)
+			cards[i], cards[j] = cards[j], cards[i]
+		}
 
-	for i := range t.cards {
-		j := rand.Intn(i + 1)
-		t.cards[i], t.cards[j] = t.cards[j], t.cards[i]
-	}
+		count := 0
+		for i := range t.players {
+			t.players[i].currentCards = cards[count*t.maxCardsToPlayer : count*t.maxCardsToPlayer+t.maxCardsToPlayer]
+			sort.SliceStable(t.players[i].currentCards, func(x, y int) bool { return t.players[i].currentCards[x] > t.players[i].currentCards[y] })
+			count++
+			fmt.Println(t.players[i])
+		}
 
-	count := 0
-	for i := range t.players {
-		t.players[i].currentCards = t.cards[count*t.maxCardsToPlayer : count*t.maxCardsToPlayer+t.maxCardsToPlayer]
-		sort.SliceStable(t.players[i].currentCards, func(x, y int) bool { return t.players[i].currentCards[x] > t.players[i].currentCards[y] })
-		count++
-		fmt.Println(t.players[i])
-	}
-
-	t.trump = t.cards[35]
-
+		t.trump = cards[35]
+	}(t.cards)
 	for len(t.players[0].currentCards) > 0 {
 		t.refreshCards()
+		t.sendScore()
 		firstCardIndex := t.currentTurn
 		t.onTable = make([]string, t.playersCount)
 		for i := 0; i < t.playersCount; i++ {
@@ -644,3 +677,5 @@ func (t *Table) sendScore() {
 		pl.sendScore <- struct{}{}
 	}
 }
+
+// "♥" "♦" "♣" "♠"

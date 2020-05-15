@@ -280,6 +280,7 @@ type whoGet struct {
 
 func TestWhoGetTable(t *testing.T) {
 	Tbl := Table{}
+
 	plr1 := player{name: "test1"}
 	plr1.id = 0
 	Tbl.players = append(Tbl.players, &plr1)
@@ -294,6 +295,14 @@ func TestWhoGetTable(t *testing.T) {
 	Tbl.players = append(Tbl.players, &plr4)
 	Tbl.playersCount = 4
 	Tbl.trump = "♠5"
+
+	Tbl.ScoreChart = make([][]struct {
+		Bet int
+		Got int
+	}, 0, 8)
+	Tbl.currentRound = 1
+	Tbl.playersCount = 4
+	Tbl.addNewRoindInChart(1)
 
 	cases := []whoGet{
 		whoGet{
@@ -320,6 +329,21 @@ func TestWhoGetTable(t *testing.T) {
 			turn:   3,
 			table:  []string{"♠4", "♠5", "♦3", "♠3"},
 			result: 1,
+		},
+		whoGet{
+			turn:   3,
+			table:  []string{"♠4", "♠5", "♦3", "♠9"},
+			result: 3,
+		},
+		whoGet{
+			turn:   1,
+			table:  []string{"♠4", "♠", "♦3", "♠1"},
+			result: 0,
+		},
+		whoGet{
+			turn:   1,
+			table:  []string{"♠", "♦5", "♦3", "0000"},
+			result: 0,
 		},
 	}
 	for caseNum, item := range cases {
