@@ -1,13 +1,14 @@
-package main
+package server
 
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
 	"text/template"
+
+	log "github.com/Sirupsen/logrus"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
@@ -29,8 +30,8 @@ type AllServers struct {
 	nextServerID    int
 	idInMain        map[int]bool
 	idInWhichTable  map[int]int
-	nonStartedGames map[int]*GameServer
-	startedGames    map[int]*GameServer
+	NonStartedGames map[int]*GameServer
+	StartedGames    map[int]*GameServer
 	mu              sync.RWMutex
 }
 
@@ -44,8 +45,8 @@ func NewGameServer(maximumPlayers int, name string, pass string) *GameServer {
 	}
 	newGame := GameServer{MaxPlayers: maximumPlayers, Name: name, ID: MainServers.nextServerID, Password: pass, table: NewTable()}
 	MainServers.mu.Lock()
-	MainServers.nonStartedGames[MainServers.nextServerID] = &newGame
-	MainServers.nonStartedGames[MainServers.nextServerID].InGamePlayers = &MainServers.nonStartedGames[MainServers.nextServerID].table.playersCount
+	MainServers.NonStartedGames[MainServers.nextServerID] = &newGame
+	MainServers.NonStartedGames[MainServers.nextServerID].InGamePlayers = &MainServers.NonStartedGames[MainServers.nextServerID].table.playersCount
 	MainServers.nextServerID++
 	MainServers.mu.Unlock()
 	go refreshServerList()
@@ -54,7 +55,8 @@ func NewGameServer(maximumPlayers int, name string, pass string) *GameServer {
 
 type key int
 
-const sessID key = 1
+//SessID is key for context storage
+const SessID key = 1
 
 func (as *AllServers) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rout := mux.NewRouter()
@@ -74,7 +76,7 @@ func handlerWSMain(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 	ctx := r.Context()
-	stringID, ok := ctx.Value(sessID).(string)
+	stringID, ok := ctx.Value(SessID).(string)
 	if !ok {
 		return
 	}
@@ -96,7 +98,7 @@ func sendGamesList(client *websocket.Conn, id string, newMsg <-chan struct{}) {
 		fmt.Println("SENDING GAMES")
 
 		GamesList := []GameServer{}
-		for _, games := range MainServers.nonStartedGames {
+		for _, games := range MainServers.NonStartedGames {
 			GamesList = append(GamesList, *games)
 		}
 		var data []byte
@@ -106,6 +108,7 @@ func sendGamesList(client *websocket.Conn, id string, newMsg <-chan struct{}) {
 			client.WriteJSON(errorMsg)
 			return
 		}
+		fmt.Println(string(data))
 		w.Write(data)
 		w.Close()
 	}
@@ -166,8 +169,8 @@ func recieveMessage(conn *websocket.Conn, id string) {
 					conn.WriteJSON(errorMsg)
 					continue
 				}
-				if MainServers.nonStartedGames[gameID] != nil {
-					MainServers.nonStartedGames[gameID].table.Join(id)
+				if MainServers.NonStartedGames[gameID] != nil {
+					MainServers.NonStartedGames[gameID].table.Join(id)
 					delete(searchingGameUsers, id)
 					go refreshServerList()
 					sendRedirect(conn, gameID)

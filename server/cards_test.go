@@ -1,4 +1,4 @@
-package main
+package server
 
 import (
 	"fmt"
@@ -299,7 +299,7 @@ func TestWhoGetTable(t *testing.T) {
 	Tbl.ScoreChart = make([][]struct {
 		Bet int
 		Got int
-	}, 0, 8)
+	}, 0, 9)
 	Tbl.currentRound = 1
 	Tbl.playersCount = 4
 	Tbl.addNewRoindInChart(1)
@@ -345,6 +345,11 @@ func TestWhoGetTable(t *testing.T) {
 			table:  []string{"♠", "♦5", "♦3", "0000"},
 			result: 0,
 		},
+		whoGet{
+			turn:   2,
+			table:  []string{"♥0", "♣1", "♦", "♣6"},
+			result: 2,
+		},
 	}
 	for caseNum, item := range cases {
 		fmt.Println("CASE", caseNum)
@@ -358,3 +363,47 @@ func TestWhoGetTable(t *testing.T) {
 }
 
 // ♥ ♦ ♣ ♠
+
+func TestWhoGaetTable(t *testing.T) {
+	Tbl := Table{}
+
+	plr1 := player{name: "test1"}
+	plr1.id = 0
+	Tbl.players = append(Tbl.players, &plr1)
+	plr2 := player{name: "test2"}
+	plr2.id = 1
+	Tbl.players = append(Tbl.players, &plr2)
+	Tbl.playersCount = 2
+	Tbl.trump = "♠5"
+
+	Tbl.ScoreChart = make([][]struct {
+		Bet int
+		Got int
+	}, 0, 9)
+	Tbl.currentRound = 1
+	Tbl.playersCount = 2
+	Tbl.addNewRoindInChart(1)
+
+	cases := []whoGet{
+
+		whoGet{
+			turn:   1,
+			table:  []string{"♥0", "♦"},
+			result: 1,
+		},
+		whoGet{
+			turn:   0,
+			table:  []string{"♥0", "♦"},
+			result: 0,
+		},
+	}
+	for caseNum, item := range cases {
+		fmt.Println("CASE", caseNum)
+		Tbl.onTable = item.table
+		Tbl.currentTurn = item.turn
+		winner := Tbl.whoGetTheTable()
+		if item.result != winner {
+			t.Errorf("case %v, got: %v, expeceted %v", caseNum, winner, item.result)
+		}
+	}
+}
