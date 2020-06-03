@@ -1,0 +1,28 @@
+// package main
+
+import (
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestGame(t *testing.T) {
+	var wg sync.WaitGroup
+	num := 2
+	wg.Add(num)
+	for i := 0; i < num; i++ {
+		go func() {
+			MyBot := NewBot()
+			Cook, err := MyBot.httpRegister()
+			if err != nil {
+				panic(err)
+			}
+			time.Sleep(time.Second)
+			MyBot.Cookies = Cook
+			MyBot.wsMain()
+			wg.Done()
+		}()
+		time.Sleep(time.Second * 2)
+	}
+	wg.Wait()
+}

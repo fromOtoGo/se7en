@@ -32,6 +32,8 @@ var NextPlayersID int = 0
 var PlayersDB map[int]*player = make(map[int]*player)
 
 type player struct {
+	mu           sync.RWMutex
+	client       *websocket.Conn
 	id           int
 	name         string
 	currentCards []string
@@ -44,12 +46,14 @@ type player struct {
 	turnFlag     bool
 	jokerFlag    bool
 	inputCh      chan int
+	jokerChan    chan int
 	err          error
 	tablePTR     *Table
 }
 
 //Table is struct of game
 type Table struct {
+	mu               sync.RWMutex
 	cards            [36]string
 	onTable          []string
 	playersCount     int
@@ -66,8 +70,6 @@ type Table struct {
 		Bet int
 		Got int
 	}
-
-	mu sync.RWMutex
 }
 
 //AllPlayers contains all online players
@@ -78,14 +80,21 @@ var nonStartedTables = map[string]*Table{}
 
 //NewPlayer Creates new player to DB
 func newPlayer(name string) *player {
-	AllUsers[name].plr = player{}
-	AllUsers[name].plr.name = name
-	AllUsers[name].plr.inputCh = make(chan int)
-	AllUsers[name].plr.newMsg = make(chan struct{})
-	AllUsers[name].plr.sendScore = make(chan struct{})
-	AllUsers[name].plr.sendEnd = make(chan struct{})
-	AllUsers[name].plr.err = nil
-	return &AllUsers[name].plr
+	AllUsers.mu.Lock()
+	defer AllUsers.mu.Unlock()
+	AllUsers.Users[name].mu.Lock()
+	defer AllUsers.Users[name].mu.Unlock()
+	AllUsers.Users[name].plr = player{}
+	AllUsers.Users[name].plr.mu.Lock()
+	defer AllUsers.Users[name].plr.mu.Unlock()
+	AllUsers.Users[name].plr.name = name
+	AllUsers.Users[name].plr.inputCh = make(chan int)
+	AllUsers.Users[name].plr.jokerChan = make(chan int)
+	AllUsers.Users[name].plr.newMsg = make(chan struct{})
+	AllUsers.Users[name].plr.sendScore = make(chan struct{})
+	AllUsers.Users[name].plr.sendEnd = make(chan struct{})
+	AllUsers.Users[name].plr.err = nil
+	return &AllUsers.Users[name].plr
 }
 
 //NewTable create new game table
@@ -113,8 +122,13 @@ func NewTable() *Table {
 	gameTables = append(gameTables, &newT)
 	go func() {
 		for {
-			if len(newT.players) == 2 {
+			if len(newT.players) == 3 {
 				newT.Start()
+				for _, pl := range newT.players {
+					pl.mu.Lock()
+					pl.tablePTR = nil
+					pl.mu.Unlock()
+				}
 				break
 			}
 		}
@@ -141,19 +155,22 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 			"data":     id},
 		).Error("Failed upgrade to websocket")
 	}
-
-	go readMessage(ws, id.Value)
-	go sendCards(ws, id.Value)
-
-	AllUsers[id.Value].plr.newMsg <- struct{}{}
+	var wg sync.WaitGroup
+	wg.Add(2)
+	AllUsers.Users[id.Value].plr.client = ws
+	go AllUsers.Users[id.Value].plr.readMessage()
+	go AllUsers.Users[id.Value].plr.SendCards()
+	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
 	time.Sleep(100 * time.Millisecond)
-	AllUsers[id.Value].plr.newMsg <- struct{}{}
-	AllUsers[id.Value].plr.sendScore <- struct{}{}
+	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
+	AllUsers.Users[id.Value].plr.sendScore <- struct{}{}
+	wg.Wait()
+	AllUsers.Users[id.Value].plr.client = nil
 }
 
 func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id, _ := r.Cookie("session_id")
-	if AllUsers[id.Value].plr.tablePTR == nil {
+	if AllUsers.Users[id.Value].plr.tablePTR == nil {
 		http.Redirect(w, r, "/main", http.StatusFound)
 		return
 	}
@@ -164,13 +181,18 @@ func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 //Join adds player to table
 func (t *Table) Join(name string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.playersCount++
-
 	t.players = append(t.players, newPlayer(name))
-	AllUsers[name].plr.tablePTR = t
+	AllUsers.mu.Lock()
+	defer AllUsers.mu.Unlock()
+	AllUsers.Users[name].plr.tablePTR = t
 }
 
 func (t *Table) addNewRoindInChart(round int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	t.ScoreChart = append(t.ScoreChart, make([]struct {
 		Bet int
 		Got int
@@ -186,6 +208,7 @@ func (t *Table) addNewRoindInChart(round int) {
 
 //Start starts the game
 func (t *Table) Start() {
+	t.mu.Lock()
 	for i := range t.players {
 		t.players[i].id = i
 	}
@@ -195,12 +218,16 @@ func (t *Table) Start() {
 		Got int
 	}, 0, 18)
 
-	t.sendScore()
 	// t.maxCardsToPlayer = 36 / t.playersCount
 	t.maxCardsToPlayer = 6
+	t.mu.Unlock()
+	t.sendScore()
 	time.Sleep(1 * time.Second)
-	// t.blindRound()
-	for i := 0; i < 3; i++ {
+	// go t.sendEverySecInfo()
+	for i := 0; i < 6; i++ {
+		fmt.Println()
+		fmt.Println("ROUND", i)
+		fmt.Println()
 		t.round(i + 1)
 	}
 	// for i := 0; i < t.maxCardsToPlayer; i++ {
@@ -217,18 +244,23 @@ func (t *Table) Start() {
 	}
 	t.sendScore()
 	t.sendEndOfGame()
+	t.mu.Lock()
 	t.gameNotEnd = false
-	time.Sleep(60 * time.Second)
+	t.mu.Unlock()
+	time.Sleep(2 * time.Second)
 	log.Infof("Game over of table %v on %v", t.id, time.Now().UTC().Format("Jan_2 2006 15:04:05"))
 }
 
 func (t *Table) round(round int) {
+	t.mu.Lock()
 	t.currentRound++
+	t.mu.Unlock()
 	t.addNewRoindInChart(t.currentRound)
 	roundScore := make(map[int]int)
 	for key := range roundScore {
 		roundScore[key] = 0
 	}
+	t.mu.Lock()
 	t.trump = ""
 	rand.Seed(time.Now().UnixNano())
 
@@ -255,58 +287,72 @@ func (t *Table) round(round int) {
 	if t.firstTurn == t.playersCount {
 		t.firstTurn = 0
 	}
-
+	t.mu.Unlock()
 	t.refreshCards()
 
 	for range t.players {
 
 		t.getBet(t.currentTurn, t.players[t.currentTurn].inputCh)
 		t.refreshCards()
+		t.mu.Lock()
 		t.currentTurn++
 		if t.currentTurn >= t.playersCount {
 			t.currentTurn = 0
 		}
+		t.mu.Unlock()
 	}
 
 	for len(t.players[0].currentCards) > 0 {
 		t.sendScore()
 		t.refreshCards()
 		firstCardIndex := t.currentTurn
+		t.mu.Lock()
 		t.onTable = make([]string, t.playersCount)
+		t.mu.Unlock()
 		for i := 0; i < t.playersCount; i++ {
 			card := ""
 			var cardIndex int
 			for !t.cardPermissionToTable(t.onTable[firstCardIndex], card, t.currentTurn) {
-				cardIndex = t.dropCard(t.currentTurn)
-				if t.players[t.currentTurn].currentCards[cardIndex] == "♠1" {
-					var err error
-					for {
-						card, err = t.whatJokerMeans(t.currentTurn)
-						if err != nil {
-							t.mu.Lock()
-							t.players[t.currentTurn].err = err
-							log.WithFields(log.Fields{
-								"package":  "main",
-								"function": "round",
-								"error":    err,
-								"data":     t.players[t.currentTurn].id},
-							).Warning("Can't use this type of joker")
-							t.mu.Unlock()
-							continue
-						}
-						break
-					}
-					break
-				} else {
-					card = t.players[t.currentTurn].currentCards[cardIndex]
+				if card != "" {
+					fmt.Printf("wrong card %s\n", card)
+					time.Sleep(time.Millisecond * 10)
+					t.refreshCards()
 				}
+				card, cardIndex = t.dropCard(t.currentTurn)
+				fmt.Println(card, cardIndex, t.currentTurn)
+				// t.refreshCards()
+				// if t.players[t.currentTurn].currentCards[cardIndex] == "♠1" {
+				// 	var err error
+				// 	for {
+				// 		card, err = t.whatJokerMeans(t.currentTurn)
+				// 		if err != nil {
+				// 			//t.mu.Lock()
+				// 			t.players[t.currentTurn].err = err
+				// 			log.WithFields(log.Fields{
+				// 				"package":  "main",
+				// 				"function": "round",
+				// 				"error":    err,
+				// 				"data":     t.players[t.currentTurn].id},
+				// 			).Warning("Can't use this type of joker")
+				// 			//t.mu.Unlock()
+				// 			continue
+				// 		}
+				// 		break
+				// 	}
+				// 	break
+				// } else {
+				// 	card = t.players[t.currentTurn].currentCards[cardIndex]
+				// }
 			}
+			t.mu.Lock()
 			t.players[t.currentTurn].currentCards = append(t.players[t.currentTurn].currentCards[:cardIndex], t.players[t.currentTurn].currentCards[cardIndex+1:]...)
 			t.onTable[t.currentTurn] = card
 			t.currentTurn++
 			if t.currentTurn == t.playersCount {
 				t.currentTurn = 0
 			}
+			t.mu.Unlock()
+			fmt.Println(t.onTable, t.players[0].currentCards, t.players[1].currentCards)
 			t.sendScore()
 			t.refreshCards()
 
@@ -314,8 +360,9 @@ func (t *Table) round(round int) {
 		whoWin := t.whoGetTheTable()
 		roundScore[whoWin]++
 		time.Sleep(800 * time.Millisecond)
+		t.mu.Lock()
 		t.onTable = nil
-
+		t.mu.Unlock()
 	}
 	t.calculateScore(roundScore)
 }
@@ -325,21 +372,42 @@ func (t *Table) getBet(player int, bet <-chan int) {
 	t.players[player].betFlag = true
 	t.mu.Unlock()
 	t.sendScore()
-	t.players[player].bet = <-bet
+	temp := <-bet
+	t.mu.Lock()
+	t.players[player].bet = temp
 	t.ScoreChart[t.currentRound-1][player].Bet = t.players[player].bet
+	t.mu.Unlock()
 }
 
-func (t *Table) dropCard(player int) (cardIndex int) {
+func (t *Table) dropCard(player int) (card string, cardIndex int) {
 
-	t.mu.Lock()
+	//t.mu.Lock()
+	t.players[player].mu.Lock()
 	t.players[player].turnFlag = true
-	t.mu.Unlock()
+	t.players[player].mu.Unlock()
+	//t.mu.Unlock()
 	cardIndex = <-t.players[player].inputCh
 	for cardIndex >= len(t.players[player].currentCards) {
 		t.mu.Lock()
 		t.players[player].turnFlag = true
 		t.mu.Unlock()
 		cardIndex = <-t.players[player].inputCh
+	}
+	select {
+	case jokerType := <-t.players[player].jokerChan:
+
+		if t.players[player].currentCards[cardIndex] == "♠1" {
+			card, _ = t.whatJokerMeans(player, jokerType)
+		} else {
+			card = t.players[player].currentCards[cardIndex]
+		}
+
+	default:
+		if t.players[player].currentCards[cardIndex] == "♠1" {
+			card, _ = t.whatJokerMeans(player, <-t.players[player].jokerChan)
+		} else {
+			card = t.players[player].currentCards[cardIndex]
+		}
 	}
 	return
 }
@@ -377,6 +445,14 @@ func (t *Table) cardPermissionToTable(suit string, card string, id int) (ok bool
 	if card == "" {
 		return false
 	}
+
+	if card == "♠1" {
+		return true
+	}
+
+	if card == "♥9" || card == "♦9" || card == "♣9" || card == "♠9" {
+		return true
+	}
 	if suit == "" { //if first card
 		return true
 	}
@@ -387,7 +463,7 @@ func (t *Table) cardPermissionToTable(suit string, card string, id int) (ok bool
 	}
 	trumpSuit := t.trump[0:3]
 	for i := range t.players[id].currentCards { //check for non having suit
-		if t.players[id].currentCards[i][0:3] == suit {
+		if (t.players[id].currentCards[i][0:3] == suit) && (t.players[id].currentCards[i] != "♠1") {
 			return false
 		}
 	}
@@ -395,18 +471,18 @@ func (t *Table) cardPermissionToTable(suit string, card string, id int) (ok bool
 		return true
 	}
 	for i := range t.players[id].currentCards { //check for non having trumps
-		if t.players[id].currentCards[i][0:3] == trumpSuit {
+		if (t.players[id].currentCards[i][0:3] == trumpSuit) && (t.players[id].currentCards[i] != "♠1") {
 			return false
 		}
 	}
 	return true
 }
 
-func (t *Table) whatJokerMeans(player int) (string, error) {
-	t.mu.Lock()
-	t.players[player].jokerFlag = true
-	t.mu.Unlock()
-	joker := <-t.players[player].inputCh //0-maxTrump, 1-♥maxHeart, 2-♦maxDiamond, 3-♣maxClub, 4-♠maxSpade, 5-♥minHeart, 6-♦minDiamond, 7-♣minClub, 8-♠minSpade, 9-minOnTable
+func (t *Table) whatJokerMeans(player int, joker int) (string, error) {
+	// //t.mu.Lock()
+	// t.players[player].jokerFlag = true
+	// //t.mu.Unlock()
+	// joker := <-t.players[player].inputCh //0-maxTrump, 1-♥maxHeart, 2-♦maxDiamond, 3-♣maxClub, 4-♠maxSpade, 5-♥minHeart, 6-♦minDiamond, 7-♣minClub, 8-♠minSpade, 9-minOnTable
 	switch joker {
 	case 0:
 		return (t.trump[0:3] + "9"), nil
@@ -460,29 +536,31 @@ func (t *Table) whatJokerMeans(player int) (string, error) {
 	}
 }
 
-func sendCards(client *websocket.Conn, name string) {
-	for AllUsers[name].plr.tablePTR.gameNotEnd {
+func (p *player) SendCards() {
+	for p.tablePTR.gameNotEnd {
 		select {
-		case <-AllUsers[name].plr.newMsg:
-			w, err := client.NextWriter(websocket.TextMessage)
+		case <-p.newMsg:
+			p.mu.Lock()
+			p.tablePTR.mu.Lock()
+			w, err := p.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed sending cards message to websocket")
 				return
 			}
 			var cardsWithShift []string
-			if len(AllUsers[name].plr.tablePTR.onTable) != 0 {
-				shift := AllUsers[name].plr.id
-				cardsWithShift = append(AllUsers[name].plr.tablePTR.onTable[shift:],
-					AllUsers[name].plr.tablePTR.onTable[:shift]...)
+			if len(p.tablePTR.onTable) != 0 {
+				shift := p.id
+				cardsWithShift = append(p.tablePTR.onTable[shift:],
+					p.tablePTR.onTable[:shift]...)
 			}
 			data, err := json.Marshal(map[string]interface{}{
-				"trump":  AllUsers[name].plr.tablePTR.trump,
-				"cards":  AllUsers[name].plr.currentCards,
+				"trump":  p.tablePTR.trump,
+				"cards":  p.currentCards,
 				"player": cardsWithShift,
 			})
 			if err != nil {
@@ -490,71 +568,82 @@ func sendCards(client *websocket.Conn, name string) {
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed converting cards message to JSON")
 
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				client.WriteJSON(errorMsg)
+				p.client.WriteJSON(errorMsg)
 				w.Close()
+				p.mu.Unlock()
+				p.tablePTR.mu.Unlock()
 				continue
+
 			}
-			AllUsers[name].plr.tablePTR.mu.Lock()
-			AllUsers[name].plr.tablePTR.mu.Unlock()
 			w.Write(data)
 			w.Close()
-		case <-AllUsers[name].plr.sendScore:
-			w, err := client.NextWriter(websocket.TextMessage)
+			p.mu.Unlock()
+			p.tablePTR.mu.Unlock()
+		case <-p.sendScore:
+			p.mu.Lock()
+			p.tablePTR.mu.Lock()
+			w, err := p.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed sending score message to websocket")
 				return
 			}
 			var names []string
 			var totalScore []int
-			for i := range AllUsers[name].plr.tablePTR.players {
-				names = append(names, AllUsers[name].plr.tablePTR.players[i].name)
-				totalScore = append(totalScore, AllUsers[name].plr.tablePTR.players[i].score)
+			for i := range p.tablePTR.players {
+				names = append(names, p.tablePTR.players[i].name)
+				totalScore = append(totalScore, p.tablePTR.players[i].score)
 			}
 			data, err := json.Marshal(map[string]interface{}{
-				"position":   AllUsers[name].plr.id,
-				"turn":       AllUsers[name].plr.tablePTR.currentTurn,
-				"isBet":      AllUsers[name].plr.betFlag,
+				"position":   p.id,
+				"turn":       p.tablePTR.currentTurn,
+				"isBet":      p.betFlag,
 				"names":      names,
 				"totalScore": totalScore,
-				"scoreChart": AllUsers[name].plr.tablePTR.ScoreChart,
+				"scoreChart": p.tablePTR.ScoreChart,
 			})
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed converting score message to JSON")
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				client.WriteJSON(errorMsg)
+				p.client.WriteJSON(errorMsg)
 			}
 			w.Write(data)
 			w.Close()
-		case <-AllUsers[name].plr.sendEnd:
-			w, err := client.NextWriter(websocket.TextMessage)
+			p.mu.Unlock()
+			p.tablePTR.mu.Unlock()
+		case <-p.sendEnd:
+			p.mu.Lock()
+			p.tablePTR.mu.Lock()
+			w, err := p.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed sending score message to websocket")
+				p.mu.Unlock()
+				p.tablePTR.mu.Unlock()
 				return
 			}
 			var names []string
 			var totalScore []int
-			for i := range AllUsers[name].plr.tablePTR.players {
-				names = append(names, AllUsers[name].plr.tablePTR.players[i].name)
-				totalScore = append(totalScore, AllUsers[name].plr.tablePTR.players[i].score)
+			for i := range p.tablePTR.players {
+				names = append(names, p.tablePTR.players[i].name)
+				totalScore = append(totalScore, p.tablePTR.players[i].score)
 			}
 			data, err := json.Marshal(map[string]interface{}{
 				"game_over": 1,
@@ -564,63 +653,57 @@ func sendCards(client *websocket.Conn, name string) {
 					"package":  "main",
 					"function": "sendCards",
 					"error":    err,
-					"data":     name},
+					"data":     p.name},
 				).Error("Failed converting end of game message to JSON")
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				client.WriteJSON(errorMsg)
+				p.client.WriteJSON(errorMsg)
 			}
 			w.Write(data)
 			w.Close()
+			p.mu.Unlock()
+			p.tablePTR.mu.Unlock()
 		}
-
 	}
-	client.Close()
+	p.client.Close()
 }
 
-func (t *Table) refreshCards() {
-	for i := range t.players {
-		t.players[i].newMsg <- struct{}{}
-	}
-}
-
-func readMessage(conn *websocket.Conn, name string) {
+func (p *player) readMessage() {
 	for {
-
-		messageType, p, err := conn.ReadMessage()
+		_, msg, err := p.client.ReadMessage()
 		if err != nil {
 			log.WithFields(log.Fields{
 				"package":  "main",
 				"function": "readMessage",
 				"error":    err,
-				"data":     name},
+				"data":     p.name},
 			).Error("Failed reading message")
 			return
 		}
-		if err := conn.WriteMessage(messageType, p); err != nil {
-			log.Println(err) //TODO need this?
-			return
-		}
+		// if err := p.client.WriteMessage(messageType, msg); err != nil {
+		// 	log.Println(err) //TODO need this?
+		// 	return
+		// }
 		if p != nil {
-			fmt.Println(string(p))
+			fmt.Println(p.name, string(msg))
 			var data map[string]interface{}
-			err := json.Unmarshal(p, &data)
+			err := json.Unmarshal(msg, &data)
 			if err != nil {
 				if err != nil {
 					log.WithFields(log.Fields{
 						"package":  "main",
 						"function": "readMessage",
 						"error":    err,
-						"data":     name},
+						"data":     p.name},
 					).Error("Failed unmarshalling JSON")
 					return
 				}
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				conn.WriteJSON(errorMsg)
+				p.client.WriteJSON(errorMsg)
 				continue
 			}
 
 			if data["bet"] != nil {
-				if AllUsers[name].plr.betFlag == true {
+				if p.betFlag == true {
 					betStr := data["bet"].(string)
 					bet, err := strconv.Atoi(betStr)
 					if err != nil {
@@ -631,28 +714,30 @@ func readMessage(conn *websocket.Conn, name string) {
 							"data":     bet},
 						).Warning("Bet should be int")
 						errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-						conn.WriteJSON(errorMsg)
+						p.client.WriteJSON(errorMsg)
 						continue
 					}
-					AllUsers[name].plr.betFlag = false
-					AllUsers[name].plr.inputCh <- bet
+					p.betFlag = false
+					p.inputCh <- bet
 				}
 			}
 			if data["card_number"] != nil {
-				if AllUsers[name].plr.turnFlag == true {
-					AllUsers[name].plr.turnFlag = false
+				p.mu.Lock()
+				if p.turnFlag == true {
+					p.turnFlag = false
+					p.mu.Unlock()
 					turnFloat := data["card_number"].(float64)
 					card := int(turnFloat)
-					AllUsers[name].plr.inputCh <- card
+					p.inputCh <- card
+					if data["joker"] != nil {
+						jokerFloat := data["joker"].(float64)
+						p.jokerChan <- int(jokerFloat)
+					}
+				} else {
+					p.mu.Unlock()
 				}
 			}
-			if data["joker"] != nil {
-				if AllUsers[name].plr.jokerFlag == true {
-					AllUsers[name].plr.jokerFlag = false
-					jokerFloat := data["joker"].(float64)
-					AllUsers[name].plr.inputCh <- int(jokerFloat)
-				}
-			}
+
 		}
 	}
 }
@@ -674,6 +759,12 @@ func (t *Table) calculateScore(roundScore map[int]int) {
 	}
 }
 
+func (t *Table) refreshCards() {
+	for i := range t.players {
+		t.players[i].newMsg <- struct{}{}
+	}
+}
+
 func (t *Table) sendScore() {
 	for _, pl := range t.players {
 		pl.sendScore <- struct{}{}
@@ -685,5 +776,16 @@ func (t *Table) sendEndOfGame() {
 		pl.sendEnd <- struct{}{}
 	}
 }
+
+// func (t *Table) sendEverySecInfo() {
+// 	for {
+// 		for _, pl := range t.players {
+// 			pl.newMsg <- struct{}{}
+// 			pl.sendScore <- struct{}{}
+// 		}
+// 		time.Sleep(time.Second)
+// 		fmt.Println("info sended")
+// 	}
+// }
 
 // "♥" "♦" "♣" "♠"

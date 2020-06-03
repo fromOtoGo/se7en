@@ -9,6 +9,7 @@ import (
 	"se7en-ImproveServer/bots/game"
 	"se7en-ImproveServer/server"
 	"strconv"
+	"sync"
 	"time"
 
 	log "github.com/Sirupsen/logrus"
@@ -22,14 +23,24 @@ type Bot struct {
 }
 
 func main() {
-	MyBot := NewBot()
-	Cook, err := MyBot.httpRegister()
-	if err != nil {
-		panic(err)
+	var wg sync.WaitGroup
+	num := 3
+	wg.Add(num)
+	for i := 0; i < num; i++ {
+		go func() {
+			MyBot := NewBot()
+			Cook, err := MyBot.httpRegister()
+			if err != nil {
+				panic(err)
+			}
+			time.Sleep(time.Second)
+			MyBot.Cookies = Cook
+			MyBot.wsMain()
+			wg.Done()
+		}()
+		time.Sleep(time.Second * 2)
 	}
-	time.Sleep(time.Second)
-	MyBot.Cookies = Cook
-	MyBot.wsMain()
+	wg.Wait()
 }
 
 //NewBot creates new bot
@@ -51,7 +62,6 @@ func (b *Bot) wsGame() {
 	}
 	bot := game.NewBotGame(conn)
 	for {
-
 		_, p, err := conn.ReadMessage()
 		if err != nil {
 			log.WithFields(log.Fields{

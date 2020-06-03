@@ -19,10 +19,10 @@ function imgsrc(num){
 }
 //send joker
 function joker(num){
-  let message = {
-    "card_number": num
-  }
-  socket.send(JSON.stringify(message));
+  // let message = {
+  //   "card_number": num
+  // }
+  // socket.send(JSON.stringify(message));
   let su =  ["♥", "♦", "♣", "♠"]
   //sadddddddddddddddddddddddd
   for (i=0;i<4;i++){
@@ -35,16 +35,16 @@ function joker(num){
   for (i=0;i<1;i++){
     div = document.createElement('div')
     div.id = "joker"
-    div.innerHTML = '<p class="jok"> <img src="/static/Cards/'+"min"+i+'.jpg"'+' class="jok'+(18+i*2)+'" onClick="sendJoker('+(+i+4)+')";/> </p>';
+    div.innerHTML = '<p class="jok"> <img src="/static/Cards/'+"min"+i+'.jpg"'+' class="jok'+(18+i*2)+'" onClick="sendJoker('+(+i+4)+','+num+')";/> </p>';
     document.body.append(div);
     div = document.createElement('div')
     div.id = "joker"
-    div.innerHTML = '<p class="jok"> <img src="/static/Cards/'+"max"+i+'.jpg"'+' class="jok'+(19+i*2)+'" onClick="sendJoker('+i+')";/> </p>';
+    div.innerHTML = '<p class="jok"> <img src="/static/Cards/'+"max"+i+'.jpg"'+' class="jok'+(19+i*2)+'" onClick="sendJoker('+i+','+num+')";/> </p>';
     document.body.append(div);
   }
 }
 //send charasterisitc of joker
-function sendJoker(jok){
+function sendJoker(jok,num){
   var mean
   // isFirstCard = true
   // isFirstTurnOfRound = true
@@ -90,8 +90,8 @@ function sendJoker(jok){
       }
    }
   }
-  alert(mean)
   let message = {
+    "card_number": num,
     "joker": mean
   }
   socket.send(JSON.stringify(message));

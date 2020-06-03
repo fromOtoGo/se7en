@@ -44,7 +44,7 @@ func checkCookieMidleWare(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/", http.StatusFound)
 			return
 		}
-		if _, ok := server.AllUsers[cookie.Value]; !ok {
+		if _, ok := server.AllUsers.Users[cookie.Value]; !ok {
 			cookie.Expires = time.Now().AddDate(0, 0, -1)
 			http.SetCookie(w, cookie)
 			http.Redirect(w, r, "/", http.StatusFound)

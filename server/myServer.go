@@ -27,12 +27,12 @@ type GameServer struct {
 
 //AllServers contains all running games adn tables in this moment
 type AllServers struct {
+	mu              sync.RWMutex
 	nextServerID    int
 	idInMain        map[int]bool
 	idInWhichTable  map[int]int
 	NonStartedGames map[int]*GameServer
 	StartedGames    map[int]*GameServer
-	mu              sync.RWMutex
 }
 
 //MainServers holds all running servers
@@ -80,9 +80,13 @@ func handlerWSMain(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	searchingGameUsers[stringID] = AllUsers[stringID]
+	searchingGameUsers.mu.Lock()
+	AllUsers.mu.Lock()
+	searchingGameUsers.Users[stringID] = AllUsers.Users[stringID]
+	AllUsers.mu.Unlock()
+	searchingGameUsers.mu.Unlock()
 	go recieveMessage(ws, stringID)
-	go sendGamesList(ws, stringID, AllUsers[stringID].newMsg)
+	go sendGamesList(ws, stringID, AllUsers.Users[stringID].newMsg)
 	go refreshServerList()
 
 }
@@ -99,7 +103,9 @@ func sendGamesList(client *websocket.Conn, id string, newMsg <-chan struct{}) {
 
 		GamesList := []GameServer{}
 		for _, games := range MainServers.NonStartedGames {
+			MainServers.mu.Lock()
 			GamesList = append(GamesList, *games)
+			MainServers.mu.Unlock()
 		}
 		var data []byte
 		data, err = json.Marshal(GamesList)
@@ -153,7 +159,7 @@ func recieveMessage(conn *websocket.Conn, id string) {
 					continue
 				}
 				NewGameServer(players, params.Name, params.Password)
-				AllUsers[id].newMsg <- struct{}{}
+				AllUsers.Users[id].newMsg <- struct{}{}
 			}
 			join := GameJoinJSON{}
 			err = json.Unmarshal(p, &join)
@@ -171,7 +177,7 @@ func recieveMessage(conn *websocket.Conn, id string) {
 				}
 				if MainServers.NonStartedGames[gameID] != nil {
 					MainServers.NonStartedGames[gameID].table.Join(id)
-					delete(searchingGameUsers, id)
+					delete(searchingGameUsers.Users, id)
 					go refreshServerList()
 					sendRedirect(conn, gameID)
 					return
@@ -202,7 +208,15 @@ func sendRedirect(client *websocket.Conn, gameID int) {
 }
 
 func refreshServerList() {
-	for i := range searchingGameUsers {
-		searchingGameUsers[i].newMsg <- struct{}{}
+	// for i := range MainServers.NonStartedGames {
+	// 	if *MainServers.NonStartedGames[i].InGamePlayers == MainServers.NonStartedGames[i].MaxPlayers {
+	// 		MainServers.mu.Lock()
+	// 		MainServers.StartedGames[i] = MainServers.NonStartedGames[i]
+	// 		MainServers.NonStartedGames[i] = nil
+	// 		MainServers.mu.Unlock()
+	// 	}
+	// }
+	for i := range searchingGameUsers.Users {
+		searchingGameUsers.Users[i].newMsg <- struct{}{}
 	}
 }

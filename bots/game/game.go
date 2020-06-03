@@ -26,7 +26,7 @@ type BotGame struct {
 func NewBotGame(conn *websocket.Conn) *BotGame {
 	Game := BotGame{}
 	Game.conn = conn
-	Game.players = 2
+	Game.players = 3
 	return &Game
 }
 
@@ -78,44 +78,61 @@ func (bg *BotGame) NewMessage(msg map[string]interface{}) {
 		}
 	}
 	bg.mu.Unlock()
-	fmt.Println(bg)
+
+	// time.Sleep(time.Millisecond * 100)
 	if bg.turn == bg.position {
+		fmt.Println(bg)
 		if len(bg.botCards) > 0 {
 			if bg.isBet {
-				time.Sleep(time.Millisecond * 100)
 				bg.send([]byte(`{"bet":"1"}`))
 			} else {
-				time.Sleep(time.Millisecond * 100)
+				if len(bg.botCards) == 1 {
+					msg := sendCardJSON{CardNumber: 0}
+					data, _ := json.Marshal(msg)
+					bg.send(data)
+					fmt.Printf("0 sended by%v card %v\n", bg.position, bg.botCards[0])
+					return
+				}
+				// time.Sleep(time.Millisecond * 100)
 				if len(bg.cardsOnTable) == 0 {
 					if bg.botCards[0] == "♠1" { //if joker send code
-						msg := sendCardJSON{CardNumber: 0}
+						msg := sendCardJSON{CardNumber: 0, Joker: 0}
 						data, _ := json.Marshal(msg)
 						bg.send(data)
-						jok := sendJokerJSON{Joker: 0}
-						jokCode, _ := json.Marshal(jok)
-						bg.send(jokCode)
+						fmt.Printf("1 sended by%v card %v\n", bg.position, bg.botCards[0])
 					} else {
 						msg := sendCardJSON{CardNumber: 0}
 						data, _ := json.Marshal(msg)
 						bg.send(data)
+						fmt.Printf("2 sended by%v card %v\n", bg.position, bg.botCards[0])
 					}
 				} else {
 					pos := bg.turn
 					if pos >= bg.players {
 						pos = 0
 					}
-					if len(bg.cardsOnTable[pos]) < 3 { //fix it
+					for i := 0; i < bg.players; i++ {
+						if len(bg.cardsOnTable[pos]) < 1 { //fix it
+							if len(bg.cardsOnTable[pos]) > 2 {
+								break
+							}
+							pos++
+							if pos >= bg.players {
+								pos = 0
+							}
+						}
+					}
+					if len(bg.cardsOnTable[pos]) < 1 {
+						fmt.Println("same bug")
 						return
 					}
 					suit := bg.cardsOnTable[pos][0:3]
 					for i := range bg.botCards {
 						if bg.botCards[i] == "♠1" {
-							msg := sendCardJSON{CardNumber: i}
+							msg := sendCardJSON{CardNumber: i, Joker: 0}
 							data, _ := json.Marshal(msg)
 							bg.send(data)
-							jok := sendJokerJSON{Joker: 0}
-							jokCode, _ := json.Marshal(jok)
-							bg.send(jokCode)
+							fmt.Printf("4 sended by%v card %v\n", bg.position, bg.botCards[i])
 							return
 
 						}
@@ -125,6 +142,7 @@ func (bg *BotGame) NewMessage(msg map[string]interface{}) {
 							msg := sendCardJSON{CardNumber: i}
 							data, _ := json.Marshal(msg)
 							bg.send(data)
+							fmt.Printf("5 sended by%v card %v\n", bg.position, bg.botCards[i])
 							return
 						}
 					}
@@ -133,12 +151,14 @@ func (bg *BotGame) NewMessage(msg map[string]interface{}) {
 							msg := sendCardJSON{CardNumber: i}
 							data, _ := json.Marshal(msg)
 							bg.send(data)
+							fmt.Printf("6 sended by%v card %v\n", bg.position, bg.botCards[i])
 							return
 						}
 					}
 					msg := sendCardJSON{CardNumber: 0}
 					data, _ := json.Marshal(msg)
 					bg.send(data)
+					fmt.Printf("7 sended by%v card %v\n", bg.position, bg.botCards[0])
 				}
 			}
 		}
@@ -147,13 +167,11 @@ func (bg *BotGame) NewMessage(msg map[string]interface{}) {
 
 type sendCardJSON struct {
 	CardNumber int `json:"card_number"`
-}
-
-type sendJokerJSON struct {
-	Joker int `json:"joker"`
+	Joker      int `json:"joker"`
 }
 
 func (bg *BotGame) send(message []byte) {
+	time.Sleep(time.Millisecond * 10)
 	w, err := bg.conn.NextWriter(websocket.TextMessage)
 	if err != nil {
 		fmt.Println(err)

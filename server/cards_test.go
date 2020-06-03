@@ -193,7 +193,7 @@ func TestJokerMean(t *testing.T) {
 		go func() {
 			Tbl.players[0].inputCh <- item.Joker
 		}()
-		jok, err := Tbl.whatJokerMeans(0)
+		jok, err := Tbl.whatJokerMeans(0, 0)
 		if err == nil {
 			if jok != item.Result {
 				t.Errorf("Test failed in %v case. Got %v, expected %v",
