@@ -8,16 +8,18 @@ import (
 )
 
 type user struct {
-	mu     sync.RWMutex
-	client *websocket.Conn
-	Name   string
-	newMsg chan struct{}
-	plr    player
+	mu         sync.RWMutex
+	client     *websocket.Conn
+	Name       string
+	newMsg     chan struct{}
+	redirectTo chan int
+	plr        player
 }
 
 type users struct {
-	mu    sync.RWMutex
-	Users map[string]*user
+	mu     sync.RWMutex
+	client *websocket.Conn
+	Users  map[string]*user
 }
 
 //AllUsers holds all users
@@ -28,11 +30,13 @@ var inGameUsers map[string]*user = make(map[string]*user)
 
 //NewUser creates new user or return error if exists
 func NewUser(name string) error {
+	AllUsers.mu.Lock()
+	defer AllUsers.mu.Unlock()
 	if _, ok := AllUsers.Users[name]; ok {
 		return errors.New("user already exists")
 	}
 	channel := make(chan struct{})
-	newUser := user{Name: name, newMsg: channel}
+	newUser := user{Name: name, newMsg: channel, redirectTo: make(chan int)}
 	AllUsers.Users[name] = &newUser
 	return nil
 }

@@ -100,6 +100,7 @@ func newPlayer(name string) *player {
 //NewTable create new game table
 func NewTable() *Table {
 	newT := Table{}
+	newT.mu.Lock()
 	number := 0
 	for suit := 0; suit < 4; suit++ {
 		for nom := 0; nom < 9; nom++ {
@@ -120,9 +121,12 @@ func NewTable() *Table {
 	newT.gameNotEnd = true
 	newT.firstTurn = 1
 	gameTables = append(gameTables, &newT)
+	newT.mu.Unlock()
 	go func() {
 		for {
+			newT.mu.Lock()
 			if len(newT.players) == 3 {
+				newT.mu.Unlock()
 				newT.Start()
 				for _, pl := range newT.players {
 					pl.mu.Lock()
@@ -131,6 +135,7 @@ func NewTable() *Table {
 				}
 				break
 			}
+			newT.mu.Unlock()
 		}
 	}()
 	log.Infof("Table %v created on %v", "id", time.Now().UTC().Format("Jan_2 2006 15:04:05"))
@@ -157,7 +162,9 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
+	AllUsers.Users[id.Value].plr.mu.Lock()
 	AllUsers.Users[id.Value].plr.client = ws
+	AllUsers.Users[id.Value].plr.mu.Unlock()
 	go AllUsers.Users[id.Value].plr.readMessage()
 	go AllUsers.Users[id.Value].plr.SendCards()
 	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
@@ -165,11 +172,15 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
 	AllUsers.Users[id.Value].plr.sendScore <- struct{}{}
 	wg.Wait()
+	AllUsers.Users[id.Value].plr.mu.Lock()
 	AllUsers.Users[id.Value].plr.client = nil
+	AllUsers.Users[id.Value].plr.mu.Unlock()
 }
 
 func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id, _ := r.Cookie("session_id")
+	AllUsers.mu.Lock()
+	defer AllUsers.mu.Unlock()
 	if AllUsers.Users[id.Value].plr.tablePTR == nil {
 		http.Redirect(w, r, "/main", http.StatusFound)
 		return
@@ -479,10 +490,7 @@ func (t *Table) cardPermissionToTable(suit string, card string, id int) (ok bool
 }
 
 func (t *Table) whatJokerMeans(player int, joker int) (string, error) {
-	// //t.mu.Lock()
-	// t.players[player].jokerFlag = true
-	// //t.mu.Unlock()
-	// joker := <-t.players[player].inputCh //0-maxTrump, 1-♥maxHeart, 2-♦maxDiamond, 3-♣maxClub, 4-♠maxSpade, 5-♥minHeart, 6-♦minDiamond, 7-♣minClub, 8-♠minSpade, 9-minOnTable
+	//0-maxTrump, 1-♥maxHeart, 2-♦maxDiamond, 3-♣maxClub, 4-♠maxSpade, 5-♥minHeart, 6-♦minDiamond, 7-♣minClub, 8-♠minSpade, 9-minOnTable
 	switch joker {
 	case 0:
 		return (t.trump[0:3] + "9"), nil
@@ -537,7 +545,7 @@ func (t *Table) whatJokerMeans(player int, joker int) (string, error) {
 }
 
 func (p *player) SendCards() {
-	for p.tablePTR.gameNotEnd {
+	for {
 		select {
 		case <-p.newMsg:
 			p.mu.Lock()
@@ -662,9 +670,11 @@ func (p *player) SendCards() {
 			w.Close()
 			p.mu.Unlock()
 			p.tablePTR.mu.Unlock()
+			p.client.Close()
+			return
 		}
 	}
-	p.client.Close()
+
 }
 
 func (p *player) readMessage() {
@@ -776,16 +786,5 @@ func (t *Table) sendEndOfGame() {
 		pl.sendEnd <- struct{}{}
 	}
 }
-
-// func (t *Table) sendEverySecInfo() {
-// 	for {
-// 		for _, pl := range t.players {
-// 			pl.newMsg <- struct{}{}
-// 			pl.sendScore <- struct{}{}
-// 		}
-// 		time.Sleep(time.Second)
-// 		fmt.Println("info sended")
-// 	}
-// }
 
 // "♥" "♦" "♣" "♠"
