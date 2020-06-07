@@ -19,7 +19,7 @@ func TestMain(t *testing.T) {
 	r.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("./static/"))))
 	r.HandleFunc("/", signInHandler)
 	r.HandleFunc("/register", registerHandler)
-	r.Handle("/game", checkCookieMidleWare(server.NewTable()))
+	r.Handle("/game", checkCookieMidleWare(http.HandlerFunc(server.MainServeHTTP)))
 	r.Handle("/wsgame", checkCookieMidleWare(http.HandlerFunc(server.ServeWS)))
 	r.Handle("/main", checkCookieMidleWare(http.HandlerFunc(server.MainServers.ServeHTTP)))
 	r.Handle("/wsmain", checkCookieMidleWare(http.HandlerFunc(server.MainServers.ServeHTTP)))

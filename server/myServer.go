@@ -44,7 +44,7 @@ func NewGameServer(maximumPlayers int, name string, pass string) *GameServer {
 	if maximumPlayers == 0 {
 		maximumPlayers = 6
 	}
-	newGame := GameServer{MaxPlayers: maximumPlayers, Name: name, ID: MainServers.nextServerID, Password: pass, table: NewTable()}
+	newGame := GameServer{MaxPlayers: maximumPlayers, Name: name, ID: MainServers.nextServerID, Password: pass, table: NewTable(MainServers.nextServerID)}
 	MainServers.mu.Lock()
 	defer MainServers.mu.Unlock()
 
@@ -86,11 +86,14 @@ func handlerWSMain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	searchingGameUsers.mu.Lock()
+	AllUsers.Users[stringID].mu.Lock()
 	searchingGameUsers.Users[stringID] = AllUsers.Users[stringID]
-	searchingGameUsers.mu.Unlock()
+	AllUsers.Users[stringID].mu.Unlock()
+
 	searchingGameUsers.Users[stringID].mu.Lock()
 	searchingGameUsers.Users[stringID].client = ws
 	searchingGameUsers.Users[stringID].mu.Unlock()
+	searchingGameUsers.mu.Unlock()
 	go recieveMessage(ws, stringID)
 	go sendGamesList(ws, stringID, AllUsers.Users[stringID].newMsg, AllUsers.Users[stringID].redirectTo)
 	go refreshServerList()
@@ -125,20 +128,21 @@ func sendGamesList(client1 *websocket.Conn, id string, newMsg <-chan struct{}, r
 				fmt.Println(err)
 				return
 			}
-			fmt.Println("SENDING GAMES")
 
-			GamesList := []*GameServer{}
+			GamesList := []GameServer{}
+			MainServers.mu.Lock()
 			for _, games := range MainServers.NonStartedGames {
-				GamesList = append(GamesList, games)
+				GamesList = append(GamesList, GameServer{ID: games.ID, InGamePlayers: games.InGamePlayers, MaxPlayers: games.MaxPlayers, Name: games.Name, Password: games.Password, PlayersIn: games.PlayersIn})
 			}
+
 			var data []byte
 			data, err = json.Marshal(GamesList)
+			MainServers.mu.Unlock()
 			if err != nil {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
 				AllUsers.Users[id].client.WriteJSON(errorMsg)
 				return
 			}
-			fmt.Println(string(data))
 			w.Write(data)
 			w.Close()
 		}
@@ -201,6 +205,7 @@ func recieveMessage(conn1 *websocket.Conn, id string) {
 					AllUsers.Users[id].client.WriteJSON(errorMsg)
 					continue
 				}
+
 				if MainServers.NonStartedGames[gameID] != nil {
 					MainServers.NonStartedGames[gameID].table.Join(id)
 					searchingGameUsers.mu.Lock()

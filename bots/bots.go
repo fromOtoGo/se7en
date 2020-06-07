@@ -24,7 +24,7 @@ type Bot struct {
 
 func main() {
 	var wg sync.WaitGroup
-	num := 3
+	num := 30
 	wg.Add(num)
 	for i := 0; i < num; i++ {
 		go func() {
@@ -38,7 +38,7 @@ func main() {
 			MyBot.wsMain()
 			wg.Done()
 		}()
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Millisecond * 1)
 	}
 	wg.Wait()
 }

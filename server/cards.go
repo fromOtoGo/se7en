@@ -98,8 +98,8 @@ func newPlayer(name string) *player {
 }
 
 //NewTable create new game table
-func NewTable() *Table {
-	newT := Table{}
+func NewTable(ID int) *Table {
+	newT := Table{id: ID}
 	newT.mu.Lock()
 	number := 0
 	for suit := 0; suit < 4; suit++ {
@@ -126,6 +126,10 @@ func NewTable() *Table {
 		for {
 			newT.mu.Lock()
 			if len(newT.players) == 3 {
+
+				MainServers.mu.Lock()
+				delete(MainServers.NonStartedGames, newT.id)
+				MainServers.mu.Unlock()
 				newT.mu.Unlock()
 				newT.Start()
 				for _, pl := range newT.players {
@@ -138,7 +142,7 @@ func NewTable() *Table {
 			newT.mu.Unlock()
 		}
 	}()
-	log.Infof("Table %v created on %v", "id", time.Now().UTC().Format("Jan_2 2006 15:04:05"))
+	log.Infof("Table %v created on %v", newT.id, time.Now().UTC().Format("Jan_2 2006 15:04:05"))
 	return &newT
 }
 
@@ -177,7 +181,8 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	AllUsers.Users[id.Value].plr.mu.Unlock()
 }
 
-func (t *Table) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+//MainServeHTTP ...y
+func MainServeHTTP(w http.ResponseWriter, r *http.Request) {
 	id, _ := r.Cookie("session_id")
 	AllUsers.mu.Lock()
 	defer AllUsers.mu.Unlock()
@@ -236,9 +241,6 @@ func (t *Table) Start() {
 	time.Sleep(1 * time.Second)
 	// go t.sendEverySecInfo()
 	for i := 0; i < 6; i++ {
-		fmt.Println()
-		fmt.Println("ROUND", i)
-		fmt.Println()
 		t.round(i + 1)
 	}
 	// for i := 0; i < t.maxCardsToPlayer; i++ {
@@ -250,9 +252,7 @@ func (t *Table) Start() {
 	// for i := t.maxCardsToPlayer; i > 0; i-- {
 	// 	t.round(i)
 	// }
-	for id := range t.players {
-		fmt.Println(t.players[id].id, t.players[id].score)
-	}
+
 	t.sendScore()
 	t.sendEndOfGame()
 	t.mu.Lock()
@@ -330,7 +330,6 @@ func (t *Table) round(round int) {
 					t.refreshCards()
 				}
 				card, cardIndex = t.dropCard(t.currentTurn)
-				fmt.Println(card, cardIndex, t.currentTurn)
 				// t.refreshCards()
 				// if t.players[t.currentTurn].currentCards[cardIndex] == "♠1" {
 				// 	var err error
@@ -363,7 +362,6 @@ func (t *Table) round(round int) {
 				t.currentTurn = 0
 			}
 			t.mu.Unlock()
-			fmt.Println(t.onTable, t.players[0].currentCards, t.players[1].currentCards)
 			t.sendScore()
 			t.refreshCards()
 
@@ -694,7 +692,6 @@ func (p *player) readMessage() {
 		// 	return
 		// }
 		if p != nil {
-			fmt.Println(p.name, string(msg))
 			var data map[string]interface{}
 			err := json.Unmarshal(msg, &data)
 			if err != nil {
