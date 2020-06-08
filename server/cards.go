@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"net/http"
+	"os"
 	"sort"
 	"strconv"
 	"sync"
@@ -53,7 +54,8 @@ type player struct {
 
 //Table is struct of game
 type Table struct {
-	mu               sync.RWMutex
+	mu               sync.Mutex
+	file             *os.File
 	cards            [36]string
 	onTable          []string
 	playersCount     int
@@ -70,6 +72,10 @@ type Table struct {
 		Bet int
 		Got int
 	}
+}
+
+func (t *Table) Write(s string) {
+	t.file.WriteString(s)
 }
 
 //AllPlayers contains all online players
@@ -100,6 +106,7 @@ func newPlayer(name string) *player {
 //NewTable create new game table
 func NewTable(ID int) *Table {
 	newT := Table{id: ID}
+	newT.file, _ = os.Create(strconv.Itoa(newT.id) + ".txt")
 	newT.mu.Lock()
 	number := 0
 	for suit := 0; suit < 4; suit++ {
@@ -172,8 +179,8 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	go AllUsers.Users[id.Value].plr.readMessage()
 	go AllUsers.Users[id.Value].plr.SendCards()
 	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
-	time.Sleep(100 * time.Millisecond)
-	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
+	// time.Sleep(100 * time.Millisecond)
+	// AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
 	AllUsers.Users[id.Value].plr.sendScore <- struct{}{}
 	wg.Wait()
 	AllUsers.Users[id.Value].plr.mu.Lock()
@@ -198,8 +205,9 @@ func MainServeHTTP(w http.ResponseWriter, r *http.Request) {
 //Join adds player to table
 func (t *Table) Join(name string) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 	t.playersCount++
+	defer t.mu.Unlock()
+
 	t.players = append(t.players, newPlayer(name))
 	AllUsers.mu.Lock()
 	defer AllUsers.mu.Unlock()
@@ -327,32 +335,10 @@ func (t *Table) round(round int) {
 				if card != "" {
 					fmt.Printf("wrong card %s\n", card)
 					time.Sleep(time.Millisecond * 10)
-					t.refreshCards()
 				}
+				t.refreshCards()
+				t.sendScore()
 				card, cardIndex = t.dropCard(t.currentTurn)
-				// t.refreshCards()
-				// if t.players[t.currentTurn].currentCards[cardIndex] == "♠1" {
-				// 	var err error
-				// 	for {
-				// 		card, err = t.whatJokerMeans(t.currentTurn)
-				// 		if err != nil {
-				// 			//t.mu.Lock()
-				// 			t.players[t.currentTurn].err = err
-				// 			log.WithFields(log.Fields{
-				// 				"package":  "main",
-				// 				"function": "round",
-				// 				"error":    err,
-				// 				"data":     t.players[t.currentTurn].id},
-				// 			).Warning("Can't use this type of joker")
-				// 			//t.mu.Unlock()
-				// 			continue
-				// 		}
-				// 		break
-				// 	}
-				// 	break
-				// } else {
-				// 	card = t.players[t.currentTurn].currentCards[cardIndex]
-				// }
 			}
 			t.mu.Lock()
 			t.players[t.currentTurn].currentCards = append(t.players[t.currentTurn].currentCards[:cardIndex], t.players[t.currentTurn].currentCards[cardIndex+1:]...)
@@ -395,7 +381,11 @@ func (t *Table) dropCard(player int) (card string, cardIndex int) {
 	t.players[player].turnFlag = true
 	t.players[player].mu.Unlock()
 	//t.mu.Unlock()
+	t.sendScore()    //
+	t.refreshCards() //
+	t.Write(fmt.Sprintln("waiting card"))
 	cardIndex = <-t.players[player].inputCh
+	t.Write(fmt.Sprintln("got card"))
 	for cardIndex >= len(t.players[player].currentCards) {
 		t.mu.Lock()
 		t.players[player].turnFlag = true
@@ -729,6 +719,8 @@ func (p *player) readMessage() {
 				}
 			}
 			if data["card_number"] != nil {
+				p.tablePTR.Write(fmt.Sprintln(data["card_number"]))
+
 				p.mu.Lock()
 				if p.turnFlag == true {
 					p.turnFlag = false

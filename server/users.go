@@ -17,7 +17,7 @@ type user struct {
 }
 
 type users struct {
-	mu     sync.RWMutex
+	mu     sync.Mutex
 	client *websocket.Conn
 	Users  map[string]*user
 }
@@ -37,6 +37,8 @@ func NewUser(name string) error {
 	}
 	channel := make(chan struct{})
 	newUser := user{Name: name, newMsg: channel, redirectTo: make(chan int)}
+	// AllUsers.mu.Lock()
 	AllUsers.Users[name] = &newUser
+	// AllUsers.mu.Unlock()
 	return nil
 }

@@ -33,12 +33,12 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			time.Sleep(time.Second)
+			time.Sleep(time.Millisecond * 100)
 			MyBot.Cookies = Cook
 			MyBot.wsMain()
 			wg.Done()
 		}()
-		time.Sleep(time.Millisecond * 1)
+		time.Sleep(time.Millisecond * 100)
 	}
 	wg.Wait()
 }

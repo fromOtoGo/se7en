@@ -92,10 +92,12 @@ func handlerWSMain(w http.ResponseWriter, r *http.Request) {
 
 	searchingGameUsers.Users[stringID].mu.Lock()
 	searchingGameUsers.Users[stringID].client = ws
+	nm := AllUsers.Users[stringID].newMsg
+	rt := AllUsers.Users[stringID].redirectTo
 	searchingGameUsers.Users[stringID].mu.Unlock()
 	searchingGameUsers.mu.Unlock()
 	go recieveMessage(ws, stringID)
-	go sendGamesList(ws, stringID, AllUsers.Users[stringID].newMsg, AllUsers.Users[stringID].redirectTo)
+	go sendGamesList(ws, stringID, nm, rt)
 	go refreshServerList()
 
 }
@@ -104,7 +106,9 @@ func sendGamesList(client1 *websocket.Conn, id string, newMsg <-chan struct{}, r
 	for {
 		select {
 		case gameID := <-redirect:
+			AllUsers.Users[id].mu.Lock()
 			w, err := AllUsers.Users[id].client.NextWriter(websocket.TextMessage)
+			AllUsers.Users[id].mu.Unlock()
 			if err != nil {
 				return
 			}
@@ -128,15 +132,19 @@ func sendGamesList(client1 *websocket.Conn, id string, newMsg <-chan struct{}, r
 				fmt.Println(err)
 				return
 			}
-
+			var mu sync.Mutex
 			GamesList := []GameServer{}
 			MainServers.mu.Lock()
 			for _, games := range MainServers.NonStartedGames {
+				games.mu.Lock()
 				GamesList = append(GamesList, GameServer{ID: games.ID, InGamePlayers: games.InGamePlayers, MaxPlayers: games.MaxPlayers, Name: games.Name, Password: games.Password, PlayersIn: games.PlayersIn})
+				games.mu.Unlock()
 			}
 
 			var data []byte
+			mu.Lock()
 			data, err = json.Marshal(GamesList)
+			mu.Unlock()
 			MainServers.mu.Unlock()
 			if err != nil {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
