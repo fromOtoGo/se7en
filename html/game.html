@@ -1,0 +1,325 @@
+<!doctype html>
+<style>
+.ramka-1 {
+    position: relative;
+    z-index: 0;
+    width: 80px;
+    height: 80px;
+    border-radius: 20px;
+    overflow: hidden;
+    margin: 30px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-family: 'Roboto Condensed', sans-serif;   
+}
+.ramka-1::before {
+    content: '';
+    position: absolute;
+    z-index: -2;
+    left: -50%;
+    top: -50%;
+    width: 200%;
+    height: 200%;
+    background-color: #EF6C00;
+    background-repeat: no-repeat;
+    background-size: 50% 50%, 50% 50%;
+    background-position: 0 0, 100% 0, 100% 100%, 0 100%;
+    background-image: linear-gradient(#EF6C00, #EF6C00), linear-gradient(#FFE0B2, #FFE0B2), linear-gradient(#EF6C00, #EF6C00), linear-gradient(#FFE0B2, #FFE0B2);
+    animation: anim-ramka-1 4s linear infinite;
+}
+.ramka-1::after {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    left: 6px;
+    top: 6px;
+    width: calc(100% - 12px);
+    height: calc(100% - 12px);
+    background: white;
+    border-radius: 20px;
+}
+@keyframes anim-ramka-1 {
+    100% {
+        transform: rotate(1turn);
+    }
+}</style>
+
+<div class="ramka-5">
+    <style>
+    .ramka-5-wr {
+        width: 80px;
+        height: 30px;
+        box-sizing: border-box;
+        padding: 15px;
+        position: relative;
+        overflow: hidden;
+        margin: 30px auto;
+    } 
+    .ramka-5-wr .ramka-5 {
+        height: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-family: 'Roboto Condensed', sans-serif;   
+    }
+    .ramka-5-wr::before {
+        content: '';
+        position: absolute;
+        width: 150%;
+        height: 150%;
+        background: repeating-linear-gradient(
+            #FFF 0%,
+            #FFF 7.5px,
+            #FF8A65 7.5px,
+            #FF8A65 15px,
+            #FFF 15px,
+            #FFF 22.5px,
+            #FF8A65 22.5px,
+            #FF8A65 30px);
+        transform: translateX(-20%) translateY(-20%) rotate(-45deg);
+        animation: anim-ramka-5 20s linear infinite;
+    }
+    .ramka-5-wr .ramka-5 {
+        position: relative;
+        background-color: #FFF;
+        flex-direction: column;
+        box-sizing: border-box;
+        padding: 30px;
+        text-align: center;
+        font-family: sans-serif;
+        z-index: 2;
+    }
+    .ramka-5-wr,
+    .ramka-5-wr .ramka-5 {
+        box-shadow: 0 0 2px #FF7043, 0 0 5px rgba(0, 0, 0, 0.2), inset 0 0 5px rgba(0, 0, 0, 0.2);
+        border-radius: 10px;
+    }
+    @keyframes anim-ramka-5 {
+        from {
+            background-position: 0;
+        }
+     
+        to {
+            background-position: 0 450px;
+        }
+    }</style>
+
+<style type="text/css">
+  .bet{
+    position: relative;
+    right: -3px;
+    top: -40px;
+    z-index: 20;
+  }
+</style>
+
+<style>
+  .takenCount {
+    color:#000000;
+    text-shadow: 1px 1px white, 2px 2px white, -1px -1px white, -2px -2px white, -1px 1px white, 1px -1px white, -2px 2px white, 2px -2px white, -3px -3px 4px rgba(0,0,0,.3), -3px 3px 4px rgba(0,0,0,.3), 3px 3px 4px rgba(0,0,0,.3), 3px -3px 4px rgba(0,0,0,.3); 
+  }
+  .takenCount0 { position: absolute; top: 329px; left: 425px; z-index: 61; }
+  .takenCount1 { position: absolute; top: 298px; left: 626px; z-index: 61; }
+  .takenCount2 { position: absolute; top: 40px;  left: 626px; z-index: 61; }
+  .takenCount3 { position: absolute; top: 10px;  left: 426px; z-index: 61; }
+  .takenCount4 { position: absolute; top: 40px;  left: 226px; z-index: 61; }
+  .takenCount5 { position: absolute; top: 298px; left: 226px; z-index: 61; } 
+</style>
+
+<style type="text/css">
+  .name{
+    text-shadow: 4px 3px 0 #7A7A7A, -3px -1px 0px rgba(99,99,99,0.57);
+    color: #FFFFFF;
+  }
+  .name0{
+    position: absolute;
+    top:390px;
+    left:350px;
+    z-index:51;
+ }
+ .name1{
+    position: absolute;
+    top:360px;
+    left:550px;
+    z-index:51;
+  }
+  .name2{
+    position: absolute;
+    top:100px;
+    left:550px;
+    z-index:51;
+  }
+  .name3{
+    position: absolute;
+    top:65px;
+    left:350px;
+    z-index:51;
+ }
+ .name4{
+    position: absolute;
+    top:100px;
+    left:145px;
+    z-index:51;
+  }
+  .name5{
+    position: absolute;
+    top:360px;
+    left:145px;
+    z-index:51;
+  }
+</style>
+
+<style type="text/css">
+  .takenCards IMG{
+    position: absolute;
+    width: 30px;
+    border-radius: 30px;
+  }
+  .takenCards0 { top: 348px; left: 422px; z-index: 60; }
+  .takenCards1 { top: 318px; left: 622px; z-index: 60; }
+  .takenCards2 { top: 60px; left: 622px; z-index: 60; }
+  .takenCards3 { top: 30px; left: 422px; z-index: 60; }
+  .takenCards4 { top: 60px; left: 222px; z-index: 60; }
+  .takenCards5 { top: 318px; left: 222px; z-index: 60; }  
+</style>
+
+<style type="text/css">
+  .avatar IMG {
+    position: absolute;
+    object-fit: cover;
+    width: 70px;
+    height: 70px;
+    border-radius: 20px;
+  }
+  .avatar0 { top: 348px; left: 350px; z-index: 51; }
+  .avatar1 { top: 318px; left: 550px; z-index: 51; }
+  .avatar2 { top: 60px; left: 550px; z-index: 51; }
+  .avatar3 { top: 30px; left: 350px; z-index: 51; }
+  .avatar4 { top: 60px; left: 150px; z-index: 51; }
+  .avatar5 { top: 318px; left: 150px; z-index: 51; }
+</style>
+
+<style type="text/css">
+  .regularCard IMG{
+    position: absolute;
+    width: 80px;
+    border-radius: 10px;
+  }
+  .trump { left: 100px; top: 180px; z-index: 18; }
+  .xplayer0 { left: 400px; top: 250px; z-index: 18; }
+  .xplayer1 { left: 400px; top: 95px; z-index: 18; }
+  .xplayer2 { left: 500px; top: 105px; z-index: 18; }
+  .xplayer3 { left: 500px; top: 240px; z-index: 18; }
+  .xplayer4 { left: 300px; top: 105px; z-index: 18; }
+  .xplayer5 { left: 300px; top: 240px; z-index: 18; }
+</style>
+
+<style type="text/css">
+  .jok IMG{
+    position: absolute;
+    width: 40px;
+    border-radius: 4px;
+    -webkit-transition: width 0.25s;
+      -moz-transition: width 0.25s;
+      -o-transition: width 0.25s;
+       transition: width 0.25s;
+  }
+  .jok img:hover{transform: scale(1.2);}
+.jok18 { left: 200px; top: 250px; z-index: 2; }
+.jok19 { left: 200px; top: 150px; z-index: 1; }
+.jok20 { left: 300px; top: 250px; z-index: 2; }
+.jok21 { left: 300px; top: 150px; z-index: 1; }
+.jok22 { left: 400px; top: 250px; z-index: 2; }
+.jok23 { left: 400px; top: 150px; z-index: 1; }
+.jok24 { left: 500px; top: 250px; z-index: 2; }
+.jok25 { left: 500px; top: 150px; z-index: 1; }
+.jok26 { left: 600px; top: 250px; z-index: 2; }
+.jok27 { left: 600px; top: 150px; z-index: 1; }
+</style>
+<style type="text/css">
+  .card IMG { 
+    position: absolute;
+    border-radius: 10px;
+      width: 80px;
+      -webkit-transition: width 0.25s;
+      -moz-transition: width 0.25s;
+      -o-transition: width 0.25s;
+       transition: width 0.25s;
+       }
+       .card img:hover{
+    transform: scale(1.2);
+      /* width: 150px; */
+  }
+  .table { top: 0px; left: 0px; z-index: 0; }
+  .cards0 { left: 170px; top: 450px; z-index: 1;}
+  .cards1 { left: 192px; top: 450px; z-index: 2; }
+  .cards2 { left: 214px; top: 450px; z-index: 3; }
+  .cards3 { left: 236px; top: 450px; z-index: 4; }
+  .cards4 { left: 258px; top: 450px; z-index: 5; }
+  .cards5 { left: 280px; top: 450px; z-index: 6; }
+  .cards6 { left: 302px; top: 450px; z-index: 7; }
+  .cards7 { left: 324px; top: 450px; z-index: 8; }
+  .cards8 { left: 346px; top: 450px; z-index: 9; }
+  .cards9 { left: 368px; top: 450px; z-index: 10; }
+  .cards10 { left: 390px; top: 450px; z-index: 11; }
+  .cards11 { left: 412px; top: 450px; z-index: 12; }
+  .cards12 { left: 434px; top: 450px; z-index: 13; }
+  .cards13 { left: 456px; top: 450px; z-index: 14; }
+  .cards14 { left: 478px; top: 450px; z-index: 15; }
+  .cards15 { left: 500px; top: 450px; z-index: 16; }
+  .cards16 { left: 522px; top: 450px; z-index: 17; }
+  .cards17 { left: 544px; top: 450px; z-index: 18; }
+  
+
+  
+  
+  
+  /* .trump { left: 100px; top: 180px; z-index: 18; } */
+  .player0 { left: 400px; top: 250px; z-index: 18; }
+  .player1 { left: 400px; top: 95px; z-index: 18; }
+  .player2 { left: 500px; top: 105px; z-index: 18; }
+  .player3 { left: 500px; top: 240px; z-index: 18; }
+  .player4 { left: 300px; top: 105px; z-index: 18; }
+  .player5 { left: 300px; top: 240px; z-index: 18; }
+   </style>
+  
+  <img src="/static/table.png" alt="3" /> 
+  
+  <div class="bet">
+    <form name="publish">
+      <input type="text" name="message" maxlength="2" size=1/>
+      <input type="submit" value="Bet"/>
+    </form>
+  </div>
+
+
+  <style>
+    table {
+      position:absolute;
+      top:8px;
+      left:806px;
+      border-collapse: collapse;
+      }
+    th, td{
+      border: 1px solid black;
+    }
+</style>
+
+<style type="text/css">
+  .rpos0{position: absolute; top:313px; left:345px;}
+  .rpos1{position: absolute; top:283px; left:545px;}
+  .rpos2{position: absolute; top:25px; left:545px;}
+  .rpos3{position: absolute; top:-5px; left:345px;}
+  .rpos4{position: absolute; top:25px; left:145px;}
+  .rpos5{position: absolute; top:283px; left:145px;}
+  .betpos{position: absolute; top:488px; left:87px;}
+</style>
+
+<script src="/static/js/game.js"></script> 
+  
+<body>
+</body>
+
