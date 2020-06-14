@@ -103,6 +103,13 @@ func newPlayer(name string) *player {
 	return &AllUsers.Users[name].plr
 }
 
+func (t *Table) getPlrsInGame() (count int) {
+	t.mu.Lock()
+	count = t.playersCount
+	t.mu.Unlock()
+	return
+}
+
 //NewTable create new game table
 func NewTable(ID int) *Table {
 	newT := Table{id: ID}
@@ -135,6 +142,7 @@ func NewTable(ID int) *Table {
 			if len(newT.players) == 3 {
 
 				MainServers.mu.Lock()
+				MainServers.NonStartedGames[newT.id] = nil
 				delete(MainServers.NonStartedGames, newT.id)
 				MainServers.mu.Unlock()
 				newT.mu.Unlock()
@@ -173,19 +181,22 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	AllUsers.Users[id.Value].plr.mu.Lock()
-	AllUsers.Users[id.Value].plr.client = ws
-	AllUsers.Users[id.Value].plr.mu.Unlock()
-	go AllUsers.Users[id.Value].plr.readMessage()
-	go AllUsers.Users[id.Value].plr.SendCards()
-	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
+	AllUsers.mu.Lock()
+	currentUser := AllUsers.Users[id.Value]
+	AllUsers.mu.Unlock()
+	currentUser.plr.mu.Lock()
+	currentUser.plr.client = ws
+	currentUser.plr.mu.Unlock()
+	go currentUser.plr.readMessage()
+	go currentUser.plr.SendCards()
+	currentUser.plr.newMsg <- struct{}{}
 	// time.Sleep(100 * time.Millisecond)
 	// AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
-	AllUsers.Users[id.Value].plr.sendScore <- struct{}{}
+	currentUser.plr.sendScore <- struct{}{}
 	wg.Wait()
-	AllUsers.Users[id.Value].plr.mu.Lock()
-	AllUsers.Users[id.Value].plr.client = nil
-	AllUsers.Users[id.Value].plr.mu.Unlock()
+	currentUser.plr.mu.Lock()
+	currentUser.plr.client = nil
+	currentUser.plr.mu.Unlock()
 }
 
 //MainServeHTTP ...y
@@ -203,15 +214,19 @@ func MainServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 //Join adds player to table
-func (t *Table) Join(name string) {
+func (t *Table) Join(name string) error {
 	t.mu.Lock()
 	t.playersCount++
 	defer t.mu.Unlock()
-
-	t.players = append(t.players, newPlayer(name))
+	if len(t.players) < t.playersCount {
+		t.players = append(t.players, newPlayer(name))
+	} else {
+		return errors.New("Game was already started")
+	}
 	AllUsers.mu.Lock()
 	defer AllUsers.mu.Unlock()
 	AllUsers.Users[name].plr.tablePTR = t
+	return nil
 }
 
 func (t *Table) addNewRoindInChart(round int) {

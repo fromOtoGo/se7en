@@ -24,7 +24,7 @@ type Bot struct {
 
 func main() {
 	var wg sync.WaitGroup
-	num := 30
+	num := 90
 	wg.Add(num)
 	for i := 0; i < num; i++ {
 		go func() {
@@ -33,8 +33,9 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			time.Sleep(time.Millisecond * 100)
+
 			MyBot.Cookies = Cook
+			time.Sleep(time.Millisecond * 1000)
 			MyBot.wsMain()
 			wg.Done()
 		}()
@@ -96,6 +97,11 @@ func (b *Bot) httpRegister() (string, error) {
 	resp, err := client.Post("http://127.0.0.1:8000/register", "application/json", bytes.NewBufferString(message))
 	if err != nil {
 		panic(err)
+	}
+	if len(resp.Header["Set-Cookie"]) == 0 {
+		for {
+
+		}
 	}
 	sc := resp.Header["Set-Cookie"][0]
 	return sc, nil

@@ -22,6 +22,13 @@ type users struct {
 	Users  map[string]*user
 }
 
+func (u *users) CheckExist(id string) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	_, ok := u.Users[id]
+	return ok
+}
+
 //AllUsers holds all users
 var AllUsers = users{Users: make(map[string]*user)}
 

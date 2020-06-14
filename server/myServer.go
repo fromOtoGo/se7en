@@ -26,6 +26,16 @@ type GameServer struct {
 	table         *Table
 }
 
+//GameServerJSON holds info for sending
+type GameServerJSON struct {
+	MaxPlayers    int      `json:"maxpl"`
+	InGamePlayers int      `json:"players"`
+	Name          string   `json:"name"`
+	ID            int      `json:"id,string"`
+	Password      string   `json:"pass,omitempty"`
+	PlayersIn     []string `json:"players_name"`
+}
+
 //AllServers contains all running games adn tables in this moment
 type AllServers struct {
 	mu              sync.Mutex
@@ -85,30 +95,26 @@ func handlerWSMain(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	AllUsers.mu.Lock()
+	currentUser := AllUsers.Users[stringID]
+	AllUsers.mu.Unlock()
+	currentUser.mu.Lock()
+	currentUser.client = ws
+	currentUser.mu.Unlock()
 	searchingGameUsers.mu.Lock()
-	AllUsers.Users[stringID].mu.Lock()
-	searchingGameUsers.Users[stringID] = AllUsers.Users[stringID]
-	AllUsers.Users[stringID].mu.Unlock()
-
-	searchingGameUsers.Users[stringID].mu.Lock()
-	searchingGameUsers.Users[stringID].client = ws
-	nm := AllUsers.Users[stringID].newMsg
-	rt := AllUsers.Users[stringID].redirectTo
-	searchingGameUsers.Users[stringID].mu.Unlock()
+	searchingGameUsers.Users[stringID] = currentUser
 	searchingGameUsers.mu.Unlock()
-	go recieveMessage(ws, stringID)
-	go sendGamesList(ws, stringID, nm, rt)
+	go recieveMessage(currentUser)
+	go sendGamesList(ws, stringID, currentUser)
 	go refreshServerList()
 
 }
 
-func sendGamesList(client1 *websocket.Conn, id string, newMsg <-chan struct{}, redirect <-chan int) {
+func sendGamesList(client1 *websocket.Conn, id string, currentUser *user) {
 	for {
 		select {
-		case gameID := <-redirect:
-			AllUsers.Users[id].mu.Lock()
-			w, err := AllUsers.Users[id].client.NextWriter(websocket.TextMessage)
-			AllUsers.Users[id].mu.Unlock()
+		case gameID := <-currentUser.redirectTo:
+			w, err := currentUser.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				return
 			}
@@ -119,36 +125,32 @@ func sendGamesList(client1 *websocket.Conn, id string, newMsg <-chan struct{}, r
 			data, err = json.Marshal(rawID)
 			if err != nil {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				AllUsers.Users[id].client.WriteJSON(errorMsg)
+				currentUser.client.WriteJSON(errorMsg)
 				return
 			}
 			w.Write(data)
 			w.Close()
-		case <-newMsg:
+		case <-currentUser.newMsg:
 			// AllUsers.Users[id].mu.Lock()
 			// defer AllUsers.Users[id].mu.Unlock()
-			w, err := AllUsers.Users[id].client.NextWriter(websocket.TextMessage)
+			w, err := currentUser.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				fmt.Println(err)
 				return
 			}
-			var mu sync.Mutex
-			GamesList := []GameServer{}
+			GamesList := []GameServerJSON{}
 			MainServers.mu.Lock()
 			for _, games := range MainServers.NonStartedGames {
-				games.mu.Lock()
-				GamesList = append(GamesList, GameServer{ID: games.ID, InGamePlayers: games.InGamePlayers, MaxPlayers: games.MaxPlayers, Name: games.Name, Password: games.Password, PlayersIn: games.PlayersIn})
-				games.mu.Unlock()
+				GamesList = append(GamesList, GameServerJSON{ID: games.ID, InGamePlayers: 3, MaxPlayers: games.MaxPlayers, Name: games.Name, Password: games.Password, PlayersIn: games.PlayersIn})
+
 			}
 
 			var data []byte
-			mu.Lock()
 			data, err = json.Marshal(GamesList)
-			mu.Unlock()
 			MainServers.mu.Unlock()
 			if err != nil {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				AllUsers.Users[id].client.WriteJSON(errorMsg)
+				currentUser.client.WriteJSON(errorMsg)
 				return
 			}
 			w.Write(data)
@@ -168,11 +170,11 @@ type GameJoinJSON struct {
 	Name string `json:"join"`
 }
 
-func recieveMessage(conn1 *websocket.Conn, id string) {
+func recieveMessage(currentUser *user) {
 	for {
 		// AllUsers.Users[id].mu.Lock()
 		// defer AllUsers.Users[id].mu.Unlock()
-		_, p, err := AllUsers.Users[id].client.ReadMessage()
+		_, p, err := currentUser.client.ReadMessage()
 		if err != nil {
 			log.Println(err)
 			return
@@ -193,37 +195,42 @@ func recieveMessage(conn1 *websocket.Conn, id string) {
 				players, err := strconv.Atoi(params.MaxPlayers)
 				if err != nil {
 					errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-					AllUsers.Users[id].client.WriteJSON(errorMsg)
+					currentUser.client.WriteJSON(errorMsg)
 					continue
 				}
 				NewGameServer(players, params.Name, params.Password)
-				AllUsers.Users[id].newMsg <- struct{}{}
+				currentUser.newMsg <- struct{}{}
 			}
 			join := GameJoinJSON{}
 			err = json.Unmarshal(p, &join)
 			if err != nil {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-				AllUsers.Users[id].client.WriteJSON(errorMsg)
+				currentUser.client.WriteJSON(errorMsg)
 				continue
 			}
 			if join != (GameJoinJSON{}) {
 				gameID, err := strconv.Atoi(join.Name)
 				if err != nil {
 					errorMsg := struct{ stringErr string }{stringErr: err.Error()}
-					AllUsers.Users[id].client.WriteJSON(errorMsg)
+					currentUser.client.WriteJSON(errorMsg)
 					continue
 				}
-
+				MainServers.mu.Lock()
 				if MainServers.NonStartedGames[gameID] != nil {
-					MainServers.NonStartedGames[gameID].table.Join(id)
+					MainServers.mu.Unlock()
+					err := MainServers.NonStartedGames[gameID].table.Join(currentUser.Name)
+					if err != nil {
+						continue
+					}
 					searchingGameUsers.mu.Lock()
-					delete(searchingGameUsers.Users, id)
+					delete(searchingGameUsers.Users, currentUser.Name)
 					searchingGameUsers.mu.Unlock()
 
 					refreshServerList()
-					AllUsers.Users[id].redirectTo <- gameID
+					currentUser.redirectTo <- gameID
 					return
 				}
+				MainServers.mu.Unlock()
 			}
 		}
 	}
