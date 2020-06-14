@@ -24,7 +24,7 @@ type Bot struct {
 
 func main() {
 	var wg sync.WaitGroup
-	num := 90
+	num := 72
 	wg.Add(num)
 	for i := 0; i < num; i++ {
 		go func() {

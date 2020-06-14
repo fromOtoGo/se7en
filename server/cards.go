@@ -142,7 +142,6 @@ func NewTable(ID int) *Table {
 			if len(newT.players) == 3 {
 
 				MainServers.mu.Lock()
-				// MainServers.NonStartedGames[newT.id] = nil
 				delete(MainServers.NonStartedGames, newT.id)
 				MainServers.mu.Unlock()
 				newT.mu.Unlock()
@@ -247,6 +246,7 @@ func (t *Table) addNewRoindInChart(round int) {
 
 //Start starts the game
 func (t *Table) Start() {
+	t.Write("GAME STARTED\n")
 	t.mu.Lock()
 	for i := range t.players {
 		t.players[i].id = i
@@ -264,8 +264,11 @@ func (t *Table) Start() {
 	time.Sleep(1 * time.Second)
 	// go t.sendEverySecInfo()
 	for i := 0; i < 6; i++ {
+		t.Write(fmt.Sprintln("round", i))
 		t.round(i + 1)
 	}
+	t.file.Close()
+	os.Remove(strconv.Itoa(t.id) + ".txt")
 	// for i := 0; i < t.maxCardsToPlayer; i++ {
 	// 	t.round(i + 1)
 	// }
@@ -348,7 +351,7 @@ func (t *Table) round(round int) {
 			var cardIndex int
 			for !t.cardPermissionToTable(t.onTable[firstCardIndex], card, t.currentTurn) {
 				if card != "" {
-					fmt.Printf("wrong card %s\n", card)
+					t.Write(fmt.Sprintf("wrong card %s\n", card))
 					time.Sleep(time.Millisecond * 10)
 				}
 				t.refreshCards()
@@ -356,7 +359,9 @@ func (t *Table) round(round int) {
 				card, cardIndex = t.dropCard(t.currentTurn)
 			}
 			t.mu.Lock()
+			t.players[t.currentTurn].mu.Lock()
 			t.players[t.currentTurn].currentCards = append(t.players[t.currentTurn].currentCards[:cardIndex], t.players[t.currentTurn].currentCards[cardIndex+1:]...)
+			t.players[t.currentTurn].mu.Unlock()
 			t.onTable[t.currentTurn] = card
 			t.currentTurn++
 			if t.currentTurn == t.playersCount {
@@ -382,7 +387,9 @@ func (t *Table) getBet(player int, bet <-chan int) {
 	t.players[player].betFlag = true
 	t.mu.Unlock()
 	t.sendScore()
+	t.Write("waiting bet\n")
 	temp := <-bet
+	t.Write("GOT BET\n")
 	t.mu.Lock()
 	t.players[player].bet = temp
 	t.ScoreChart[t.currentRound-1][player].Bet = t.players[player].bet
@@ -399,6 +406,11 @@ func (t *Table) dropCard(player int) (card string, cardIndex int) {
 	t.sendScore()    //
 	t.refreshCards() //
 	t.Write(fmt.Sprintln("waiting card"))
+	go func() {
+		time.Sleep(time.Millisecond * 100)
+		t.sendScore()    //
+		t.refreshCards() //
+	}()
 	cardIndex = <-t.players[player].inputCh
 	t.Write(fmt.Sprintln("got card"))
 	for cardIndex >= len(t.players[player].currentCards) {
@@ -427,6 +439,8 @@ func (t *Table) dropCard(player int) (card string, cardIndex int) {
 }
 
 func (t *Table) whoGetTheTable() (id int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	maxCard := t.onTable[t.currentTurn]
 	maxIndex := t.currentTurn
 	for i := 0; i < len(t.onTable); i++ {
@@ -552,7 +566,8 @@ func (p *player) SendCards() {
 		select {
 		case <-p.newMsg:
 			p.mu.Lock()
-			p.tablePTR.mu.Lock()
+			plTable := p.tablePTR
+			p.mu.Unlock()
 			w, err := p.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				log.WithFields(log.Fields{
@@ -564,7 +579,8 @@ func (p *player) SendCards() {
 				return
 			}
 			var cardsWithShift []string
-			if len(p.tablePTR.onTable) != 0 {
+			plTable.mu.Lock()
+			if len(plTable.onTable) != 0 {
 				shift := p.id
 				cardsWithShift = append(p.tablePTR.onTable[shift:],
 					p.tablePTR.onTable[:shift]...)
@@ -574,6 +590,7 @@ func (p *player) SendCards() {
 				"cards":  p.currentCards,
 				"player": cardsWithShift,
 			})
+			plTable.mu.Unlock()
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
@@ -585,15 +602,11 @@ func (p *player) SendCards() {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
 				p.client.WriteJSON(errorMsg)
 				w.Close()
-				p.mu.Unlock()
-				p.tablePTR.mu.Unlock()
 				continue
 
 			}
 			w.Write(data)
 			w.Close()
-			p.mu.Unlock()
-			p.tablePTR.mu.Unlock()
 		case <-p.sendScore:
 			p.mu.Lock()
 			p.tablePTR.mu.Lock()
@@ -742,6 +755,7 @@ func (p *player) readMessage() {
 					p.mu.Unlock()
 					turnFloat := data["card_number"].(float64)
 					card := int(turnFloat)
+					p.tablePTR.Write("send to channel\n")
 					p.inputCh <- card
 					if data["joker"] != nil {
 						jokerFloat := data["joker"].(float64)
