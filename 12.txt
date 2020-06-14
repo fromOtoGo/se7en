@@ -1,0 +1,460 @@
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+1
+1
+1
+1
+1
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+1
+got card
+1
+1
+1
+0
+0
+1
+1
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+1
+got card
+1
+1
+1
+1
+waiting card
+0
+got card
+2
+2
+2
+2
+2
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+waiting card
+0
+1
+got card
+1
+1
+1
+1
+1
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+1
+1
+1
+1
+1
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+waiting card
+5
+got card
+5
+5
+5
+5
+waiting card
+0
+got card
+4
+4
+4
+4
+4
+0
+0
+waiting card
+0
+got card
+waiting card
+3
+got card
+3
+3
+3
+3
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+1
+1
+waiting card
+0
+got card
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+waiting card
+1
+got card
+1
+1
+1
+1
+waiting card
+0
+got card
+0
+0
+0
+0
+0
+0
+0
+waiting card
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+0
+got card
+0
+0
+0
+0
+waiting card
+0
+0
+got card
+0
+0
+0
+0
+0

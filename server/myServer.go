@@ -217,8 +217,9 @@ func recieveMessage(currentUser *user) {
 				}
 				MainServers.mu.Lock()
 				if MainServers.NonStartedGames[gameID] != nil {
-					MainServers.mu.Unlock()
+
 					err := MainServers.NonStartedGames[gameID].table.Join(currentUser.Name)
+					MainServers.mu.Unlock()
 					if err != nil {
 						continue
 					}

@@ -142,7 +142,7 @@ func NewTable(ID int) *Table {
 			if len(newT.players) == 3 {
 
 				MainServers.mu.Lock()
-				MainServers.NonStartedGames[newT.id] = nil
+				// MainServers.NonStartedGames[newT.id] = nil
 				delete(MainServers.NonStartedGames, newT.id)
 				MainServers.mu.Unlock()
 				newT.mu.Unlock()
