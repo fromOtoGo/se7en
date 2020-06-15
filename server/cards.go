@@ -103,6 +103,13 @@ func newPlayer(name string) *player {
 	return &AllUsers.Users[name].plr
 }
 
+func (t *Table) getPlrsInGame() (count int) {
+	t.mu.Lock()
+	count = t.playersCount
+	t.mu.Unlock()
+	return
+}
+
 //NewTable create new game table
 func NewTable(ID int) *Table {
 	newT := Table{id: ID}
@@ -129,26 +136,7 @@ func NewTable(ID int) *Table {
 	newT.firstTurn = 1
 	gameTables = append(gameTables, &newT)
 	newT.mu.Unlock()
-	go func() {
-		for {
-			newT.mu.Lock()
-			if len(newT.players) == 3 {
 
-				MainServers.mu.Lock()
-				delete(MainServers.NonStartedGames, newT.id)
-				MainServers.mu.Unlock()
-				newT.mu.Unlock()
-				newT.Start()
-				for _, pl := range newT.players {
-					pl.mu.Lock()
-					pl.tablePTR = nil
-					pl.mu.Unlock()
-				}
-				break
-			}
-			newT.mu.Unlock()
-		}
-	}()
 	log.Infof("Table %v created on %v", newT.id, time.Now().UTC().Format("Jan_2 2006 15:04:05"))
 	return &newT
 }
@@ -173,19 +161,22 @@ func ServeWS(w http.ResponseWriter, r *http.Request) {
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)
-	AllUsers.Users[id.Value].plr.mu.Lock()
-	AllUsers.Users[id.Value].plr.client = ws
-	AllUsers.Users[id.Value].plr.mu.Unlock()
-	go AllUsers.Users[id.Value].plr.readMessage()
-	go AllUsers.Users[id.Value].plr.SendCards()
-	AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
+	AllUsers.mu.Lock()
+	currentUser := AllUsers.Users[id.Value]
+	AllUsers.mu.Unlock()
+	currentUser.plr.mu.Lock()
+	currentUser.plr.client = ws
+	currentUser.plr.mu.Unlock()
+	go currentUser.plr.readMessage()
+	go currentUser.plr.SendCards()
+	currentUser.plr.newMsg <- struct{}{}
 	// time.Sleep(100 * time.Millisecond)
 	// AllUsers.Users[id.Value].plr.newMsg <- struct{}{}
-	AllUsers.Users[id.Value].plr.sendScore <- struct{}{}
+	currentUser.plr.sendScore <- struct{}{}
 	wg.Wait()
-	AllUsers.Users[id.Value].plr.mu.Lock()
-	AllUsers.Users[id.Value].plr.client = nil
-	AllUsers.Users[id.Value].plr.mu.Unlock()
+	currentUser.plr.mu.Lock()
+	currentUser.plr.client = nil
+	currentUser.plr.mu.Unlock()
 }
 
 //MainServeHTTP ...y
@@ -203,15 +194,39 @@ func MainServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 //Join adds player to table
-func (t *Table) Join(name string) {
+func (t *Table) Join(name string) error {
 	t.mu.Lock()
-	t.playersCount++
-	defer t.mu.Unlock()
 
-	t.players = append(t.players, newPlayer(name))
+	if len(t.players) < 3 {
+		t.playersCount++
+		t.players = append(t.players, newPlayer(name))
+	} else {
+		return errors.New("Game was already started")
+	}
+	count := t.playersCount
+	id := t.id
+
+	t.mu.Unlock()
 	AllUsers.mu.Lock()
-	defer AllUsers.mu.Unlock()
 	AllUsers.Users[name].plr.tablePTR = t
+	AllUsers.mu.Unlock()
+	if count == 3 {
+		t.Write("SHOULD START\n")
+		go func() {
+			MainServers.mu.Lock()
+			delete(MainServers.NonStartedGames, id)
+			MainServers.mu.Unlock()
+			t.Start()
+			t.mu.Lock()
+			for _, pl := range t.players {
+				pl.mu.Lock()
+				pl.tablePTR = nil
+				pl.mu.Unlock()
+			}
+			t.mu.Unlock()
+		}()
+	}
+	return nil
 }
 
 func (t *Table) addNewRoindInChart(round int) {
@@ -232,6 +247,7 @@ func (t *Table) addNewRoindInChart(round int) {
 
 //Start starts the game
 func (t *Table) Start() {
+	t.Write("GAME STARTED\n")
 	t.mu.Lock()
 	for i := range t.players {
 		t.players[i].id = i
@@ -249,8 +265,11 @@ func (t *Table) Start() {
 	time.Sleep(1 * time.Second)
 	// go t.sendEverySecInfo()
 	for i := 0; i < 6; i++ {
+		t.Write(fmt.Sprintln("round", i))
 		t.round(i + 1)
 	}
+	t.file.Close()
+	os.Remove(strconv.Itoa(t.id) + ".txt")
 	// for i := 0; i < t.maxCardsToPlayer; i++ {
 	// 	t.round(i + 1)
 	// }
@@ -260,13 +279,13 @@ func (t *Table) Start() {
 	// for i := t.maxCardsToPlayer; i > 0; i-- {
 	// 	t.round(i)
 	// }
-
+	time.Sleep(20 * time.Second)
 	t.sendScore()
 	t.sendEndOfGame()
 	t.mu.Lock()
 	t.gameNotEnd = false
 	t.mu.Unlock()
-	time.Sleep(2 * time.Second)
+
 	log.Infof("Game over of table %v on %v", t.id, time.Now().UTC().Format("Jan_2 2006 15:04:05"))
 }
 
@@ -329,19 +348,23 @@ func (t *Table) round(round int) {
 		t.onTable = make([]string, t.playersCount)
 		t.mu.Unlock()
 		for i := 0; i < t.playersCount; i++ {
+			t.Write("NEXT CARD\n")
 			card := ""
 			var cardIndex int
 			for !t.cardPermissionToTable(t.onTable[firstCardIndex], card, t.currentTurn) {
 				if card != "" {
-					fmt.Printf("wrong card %s\n", card)
+					t.Write(fmt.Sprintf("wrong card %s\n", card))
 					time.Sleep(time.Millisecond * 10)
 				}
 				t.refreshCards()
 				t.sendScore()
 				card, cardIndex = t.dropCard(t.currentTurn)
 			}
+			t.Write("CARD IS OK\n")
 			t.mu.Lock()
+			t.players[t.currentTurn].mu.Lock()
 			t.players[t.currentTurn].currentCards = append(t.players[t.currentTurn].currentCards[:cardIndex], t.players[t.currentTurn].currentCards[cardIndex+1:]...)
+			t.players[t.currentTurn].mu.Unlock()
 			t.onTable[t.currentTurn] = card
 			t.currentTurn++
 			if t.currentTurn == t.playersCount {
@@ -358,7 +381,9 @@ func (t *Table) round(round int) {
 		t.mu.Lock()
 		t.onTable = nil
 		t.mu.Unlock()
+		t.Write("next iter")
 	}
+	t.Write("round edn\n")
 	t.calculateScore(roundScore)
 }
 
@@ -367,7 +392,9 @@ func (t *Table) getBet(player int, bet <-chan int) {
 	t.players[player].betFlag = true
 	t.mu.Unlock()
 	t.sendScore()
+	t.Write("waiting bet\n")
 	temp := <-bet
+	t.Write("GOT BET\n")
 	t.mu.Lock()
 	t.players[player].bet = temp
 	t.ScoreChart[t.currentRound-1][player].Bet = t.players[player].bet
@@ -383,15 +410,26 @@ func (t *Table) dropCard(player int) (card string, cardIndex int) {
 	//t.mu.Unlock()
 	t.sendScore()    //
 	t.refreshCards() //
-	t.Write(fmt.Sprintln("waiting card"))
+	t.Write(fmt.Sprintln("waiting card", t.players[player].turnFlag))
+	go func() {
+		time.Sleep(time.Millisecond * 100)
+		t.sendScore()    //
+		t.refreshCards() //
+	}()
 	cardIndex = <-t.players[player].inputCh
 	t.Write(fmt.Sprintln("got card"))
 	for cardIndex >= len(t.players[player].currentCards) {
 		t.mu.Lock()
 		t.players[player].turnFlag = true
 		t.mu.Unlock()
+		t.Write(fmt.Sprintln("bad index", t.players[player].turnFlag))
+		time.Sleep(time.Millisecond * 100)
+		t.sendScore()    //
+		t.refreshCards() //
 		cardIndex = <-t.players[player].inputCh
+		t.Write(fmt.Sprintln("Got new"))
 	}
+	t.Write(fmt.Sprintln("check joker"))
 	select {
 	case jokerType := <-t.players[player].jokerChan:
 
@@ -408,10 +446,13 @@ func (t *Table) dropCard(player int) (card string, cardIndex int) {
 			card = t.players[player].currentCards[cardIndex]
 		}
 	}
+	t.Write(fmt.Sprintln("checked"))
 	return
 }
 
 func (t *Table) whoGetTheTable() (id int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	maxCard := t.onTable[t.currentTurn]
 	maxIndex := t.currentTurn
 	for i := 0; i < len(t.onTable); i++ {
@@ -537,7 +578,8 @@ func (p *player) SendCards() {
 		select {
 		case <-p.newMsg:
 			p.mu.Lock()
-			p.tablePTR.mu.Lock()
+			plTable := p.tablePTR
+			p.mu.Unlock()
 			w, err := p.client.NextWriter(websocket.TextMessage)
 			if err != nil {
 				log.WithFields(log.Fields{
@@ -549,7 +591,8 @@ func (p *player) SendCards() {
 				return
 			}
 			var cardsWithShift []string
-			if len(p.tablePTR.onTable) != 0 {
+			plTable.mu.Lock()
+			if len(plTable.onTable) != 0 {
 				shift := p.id
 				cardsWithShift = append(p.tablePTR.onTable[shift:],
 					p.tablePTR.onTable[:shift]...)
@@ -559,6 +602,7 @@ func (p *player) SendCards() {
 				"cards":  p.currentCards,
 				"player": cardsWithShift,
 			})
+			plTable.mu.Unlock()
 			if err != nil {
 				log.WithFields(log.Fields{
 					"package":  "main",
@@ -570,15 +614,11 @@ func (p *player) SendCards() {
 				errorMsg := struct{ stringErr string }{stringErr: err.Error()}
 				p.client.WriteJSON(errorMsg)
 				w.Close()
-				p.mu.Unlock()
-				p.tablePTR.mu.Unlock()
 				continue
 
 			}
 			w.Write(data)
 			w.Close()
-			p.mu.Unlock()
-			p.tablePTR.mu.Unlock()
 		case <-p.sendScore:
 			p.mu.Lock()
 			p.tablePTR.mu.Lock()
@@ -722,11 +762,13 @@ func (p *player) readMessage() {
 				p.tablePTR.Write(fmt.Sprintln(data["card_number"]))
 
 				p.mu.Lock()
+				p.tablePTR.Write(fmt.Sprintln(p.turnFlag))
 				if p.turnFlag == true {
 					p.turnFlag = false
 					p.mu.Unlock()
 					turnFloat := data["card_number"].(float64)
 					card := int(turnFloat)
+					p.tablePTR.Write("send to channel\n")
 					p.inputCh <- card
 					if data["joker"] != nil {
 						jokerFloat := data["joker"].(float64)
