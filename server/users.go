@@ -33,7 +33,7 @@ func (u *users) CheckExist(id string) bool {
 var AllUsers = users{Users: make(map[string]*user)}
 
 var searchingGameUsers = users{Users: make(map[string]*user)}
-var inGameUsers map[string]*user = make(map[string]*user)
+var inGameUsers = make(map[string]*user)
 
 //NewUser creates new user or return error if exists
 func NewUser(name string) error {

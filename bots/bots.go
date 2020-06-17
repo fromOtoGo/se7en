@@ -188,7 +188,7 @@ func (b *Bot) wsMain() {
 	}
 }
 
-var botCount int = 1
+var botCount = 1
 
 func sendJoin(client *websocket.Conn, msg server.GameJoinJSON) {
 	fmt.Println("trying to connect")
